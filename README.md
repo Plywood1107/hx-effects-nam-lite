@@ -1,5 +1,7 @@
 # HX Effects: NAM, Amps and Effects
 
+![An HX Effects running a Tweed Blues Brt amp and two NAM A2 Lite blocks](docs/images/hx-effects.jpg)
+
 This repo adds amp modelling capability to the Line 6 HX Effects in two ways: 
 
 **Neural Amp Modeler (NAM) A2 Lite** captures can be loaded as IR files into the unit's, into the NAM A2 Lite block in Distortion>Mono
