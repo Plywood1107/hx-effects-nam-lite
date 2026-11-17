@@ -1,11 +1,20 @@
 # Handover: NAM A2 Lite on the Line 6 HX Effects
 
-Working state as of 2026‑11‑17 (first written 2026‑11‑01): `python3 build.py nam|amps|full` makes NAM + Click (`build/HX_Effects_v3.80.0_NAM.hxf`), + Line 6's 111 HX Stomp amps (`..._NAM_Amps.hxf`), + the extra effects (`..._NAM_Amps_Effects.hxf`); section "Stock amps: working". The notes below on the two older builds still describe how each base image is made. `build.py` makes the two images in use, each
-built, verified and printed with its MD5: `nam` (NAM + Click, `build_nam_click.py --nam-host regal`) and `full`
-(`build_all.py`: NAM, Click, Geiger, Commander, Corrupt, Ottobit and Doom Chug), both with NAM on the mono Regal
-Bass DI. The full default image (MD5 `7b291b5f…`) is what runs on the unit. The original NAM‑only image
-(`build_effects.py`, NAM in the IR category) still builds. Line 6's stock amps were tried and dropped (last
-section). A USB flasher installs either without Line 6 Updater.
+Working state as of 2026‑11‑17 (first written 2026‑11‑01). `python3 build.py nam|amps|full` builds, verifies
+and prints the MD5 of one of three images, each with NAM on the mono Regal Bass DI and Click on the mono
+Mod/Chorus Echo:
+
+| Mode | Contents | Pipeline | Output | MD5 |
+|---|---|---|---|---|
+| `nam` | NAM + Click | `build_nam_click.py --nam-host regal` | `build/HX_Effects_v3.80.0_NAM.hxf` | `24b00640…` |
+| `amps` | + Line 6's 111 HX Stomp amps (Distortion → Amps) | the above, then `build_amps.py --set all --base-file …` | `…_NAM_Amps.hxf` | `e2162bca…` |
+| `full` | + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `build_all.py`, then `build_amps.py` | `…_NAM_Amps_Effects.hxf` | `edd48969…` |
+
+All three were played on the unit on 2026‑11‑17; the full image is what's on it now. The amp images carry the
+USB memory window (`tools/memwin.py`) for reading the unit's log. The README (rewritten 2026‑11‑17 in
+0e59a43, then edited by the user on GitHub in ede738a: their own intro and voice, keep it) covers only these three builds and the install; everything else lives here and in `docs/`. The older
+builders (`build_effects.py` NAM in the IR category, `build_click.py`, `build_all.py --with …`) still work and
+are described below. A USB flasher installs any image without Line 6 Updater.
 This note is for picking the project up in Claude Code (or anywhere) without re‑deriving anything;
 the dated sections further down record how things were found.
 
@@ -13,17 +22,22 @@ the dated sections further down record how things were found.
 
 - **Repo:** `/Users/scott/hx-effects-nam-lite` → <https://github.com/scottlynn73/hx-effects-nam-lite>
   (standalone, GPL‑3.0, no Line 6 files tracked; `.gitignore` excludes `firmware/`, `build/`, `*.hxf`,
-  `*.l6ia`, `.venv/`, `.DS_Store`, `usblog/`). Everything is on `main` (the only branch), SSH remote,
-pushed 2026‑11‑11. Pushing from Claude's shell has failed before: push from your own terminal.
+  `*.l6ia`, `.venv/`, `.DS_Store`, `usblog/`). Everything is on `main`, SSH remote, up to date with GitHub
+  on 2026‑11‑17 (ede738a); the local branch `amps` is merged and can be deleted. Pushing from Claude's shell sometimes fails:
+  then push from your own terminal.
+- **Amps development repo:** `~/hx-effects-stomp` (local git only, no remote): where the amps were worked out
+  test by test, with the plan, findings and logs (`docs/plan.md`, `docs/findings.md`). Its tools were copied here
+  unchanged; `docs/amps-findings.md` is its findings file.
 - **Upstream + scratch work:** `~/hx-stomp-nam-lite` (clone of
   <https://github.com/nocaseguy/hx-stomp-nam-lite> with all the edits applied by `apply_effects*.py`,
   plus the bisection scripts, `*_parts/` entry dumps, `stomp_e2.txt`/`effects_e2.txt`, `*_ddr.txt`).
   Not needed to build; useful if the offsets ever have to be re‑mapped.
-- **Two builds (2026-11-13):** `python3 build.py nam|full` = NAM + Click / + the extra effects, each built, verified
-  and printed with its MD5, NAM on the Regal Bass DI in both (`nam_host.py`, shared by build_all.py and
-  build_nam_click.py, which gained `--nam-host` and writes a manifest for verify_nam_click.py).
-- **Build:** `cd /Users/scott/hx-effects-nam-lite && source .venv/bin/activate`, then
-  `python3 build_all.py` (all‑in‑one, the default image, MD5 `7b291b5f27ad8bb7c121c15528dbc5d2`; check
+- **build.py:** the three modes above (table). NAM's host is chosen by `nam_host.py`, shared by build_all.py and
+  build_nam_click.py (`--nam-host`, which writes a manifest for verify_nam_click.py). `--quick` reuses a base image
+  already built; `-- …` passes options to the base builder. Venv needs `numpy unicorn==2.1.4 capstone==5.0.9 pyusb
+  libusb-package` (unicorn/capstone for verify_amps.py's emulation checks).
+- **Base images by hand:** `cd /Users/scott/hx-effects-nam-lite && source .venv/bin/activate`, then
+  `python3 build_all.py` (all‑in‑one without amps, MD5 `7b291b5f27ad8bb7c121c15528dbc5d2`; check
   it with `python3 tools/verify/verify_all.py`) or `python3 build_effects.py` (NAM only, MD5
   `aaa5186b41f8db6f7a05487355706bb1` since the 2300 cost; verify_all compares against it, so rebuild it
   after any change to NAM). Both read `firmware/HX_Effects_v3.80.0_0xd97239907.hxf` (MD5
@@ -276,7 +290,7 @@ the older proven MD5s (899f6904 NAM+Click+Geiger, a486dbed +Commander, e0a3f744 
 Doom Chug image) are 2700 builds. Rebuilt now they should differ only in that cost and Entry 0's checksum
 (checked for the default image).
 
-## Stock amps: working (2026-11-17, branch `amps`)
+## Stock amps: working (2026-11-17, on `main` since aa3d5b4)
 
 Solved in a separate repo (`~/hx-effects-stomp`, local only) and brought back here. The earlier attempts below
 failed for five separate reasons, none of them guessed then: the block allocator sends amp types to a BIG path
@@ -289,7 +303,10 @@ list under Distortion (`tools/amps_group.py`), so no stock block is replaced. Th
 `docs/amps-findings.md`.
 
 `build.py amps|full` end with `build_amps.py --set all --base-file <image> --base-check <its verifier>` and
-`tools/verify_amps.py`; `build.py nam` stops before the amps. Each copies its final image to a plain name in build/. The images keep the USB memory window
+`tools/verify_amps.py`; `build.py nam` stops before the amps. Each copies its final image to a plain name in build/.
+Limits: three amps per preset (placement limit patched to 3; the DSP has three amp slots, fx.13..fx.15); no preamps
+or cabs (the user dropped them: preamps are a data job like the amps, legacy cabs need the cab limit and unstudied
+screens, new-style cabs need the Stomp's 54 MB cab package, absent here). The images keep the USB memory window
 (`tools/memwin.py`). On the unit (2026-11-17): the NAM + Click + amps image (MD5 e2162bcaf9d295612c24ebe1161c7df0,
 the same bytes `build.py amps` now makes) played NAM, an amp after it and Click; all 111 amps loaded on the
 stock-based image. The full + amps image (MD5 edd48969de189b3686bcb8bdfc5f2e93) was flashed on 2026-11-17 and boots: no fault, the same boot-log lines as the NAM + amps image; the user's test the same day: "All played" (the effects, NAM and amps). Its log: 367 model changes, all successful, presets saved, no fault. New in this log only: 34 lines `UNKNOWN FOOTSWITCH MODE 11` + `app.c:1624 ERROR_INVALID_PARAMETER` in one burst after a model change; the message is in the HX Effects' own footswitch code (not in the Stomp's); cause not looked into.
