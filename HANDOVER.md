@@ -22,13 +22,14 @@ are described below. A USB flasher installs any image without Line 6 Updater.
 This note is for picking the project up in Claude Code (or anywhere) without re‑deriving anything;
 the dated sections further down record how things were found.
 
-**Recovery position (2026‑11‑17).** Git tag `three-builds-2026-11-17` (commit 128daa7) is the code that builds
-the three tested images (the same code made the images now in `build/`, whose MD5s match the tested ones; a clean
-rebuild from the tag was not run). Copies of the three images
+**Recovery position (2026‑11‑17).** Git tag `three-builds-2026-11-17` (moved to commit 0585afb, with the preamps)
+is the code for the current builds: nam `24b00640…`, amps `0dcbad07…` (verified, not flashed), full `a27dfeda…`
+(on the unit). The earlier no-preamps images (amps `e2162bca…`, full `edd48969…`) come from commit 128daa7. A clean
+`build.py` rebuild from either was not run: the images were made step by step with the same code. Copies of the three images
 and the stock firmware, with `MD5SUMS` and a `README.txt` (flash and rebuild steps), are in
 `~/hx-effects-images/2026-11-17/`, outside the repo (Line 6 derivatives: never commit or share). To get back: flash
 the wanted copy (`echo flash | .venv/bin/python tools/flash.py flash ~/hx-effects-images/2026-11-17/<file>`), or
-`git checkout three-builds-2026-11-17` and `python build.py nam|amps|full`. Unit won't boot: hold > at power-on,
+`git checkout three-builds-2026-11-17` (or 128daa7 for the no-preamps images) and `python build.py nam|amps|full`. Unit won't boot: hold > at power-on,
 Line 6 Updater, the stock file. Back up presets and IRs in HX Edit before any new image.
 
 ## What exists
