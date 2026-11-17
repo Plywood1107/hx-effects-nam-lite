@@ -1,15 +1,22 @@
 # HX Effects: NAM, Amps and Effects
 
-This repo adds amp modelling capability to the Line 6 HX Effects: **Neural Amp Modeler (NAM) A2 Lite**
-captures, **Line 6's own 111 HX Stomp amps** (already in the firmware, never listed), and a handful of original
-effects. You build the firmware yourself, on your own computer, from Line 6's stock 3.80.0 file.
+This repo adds amp modelling capability to the Line 6 HX Effects in two ways: 
 
-> ## ⚠️ HX Effects firmware 3.80.0 only
+**Neural Amp Modeler (NAM) A2 Lite** captures can be loaded as IR files into the unit's, into the NAM A2 Lite block in Distortion>Mono
+
+**Line 6's own 111 HX Stomp amps now run on the device**- these were already in the firmware, but never listed. There is a new Amps group under the Distortion category.
+
+The repo includes tools to flash new firmware to the unit independent of Line 6 tools, and to convert NAM files so they can be loaded into the IR storage on the unit.
+
+If you want them, it can also adds some frankly pretty daft noisy effects for those who like to make sounds that bear no resemblance to guitars- glitchy, stuttering, pure boggin' sounds only a twisted person like me could appreciate. The 'Doom Chug' is a drone maker that sounds like a downtuned set of bagpipes being tortured, especially if you pass it through the Geiger, Corrupt, Commander or Ottobit effects. Pure hummin'! 
+
+**NO FIRMWARE IS HOSTED HERE**. You modify/build the firmware yourself, on your own computer, from Line 6's stock 3.80.0 file.
+
+> ## ⚠️ Works on HX Effects firmware 3.80.0 only
 >
 > The build works on one exact file: **`HX_Effects_v3.80.0_0xd97239907.hxf`**, MD5
 > **`7c2ebdf1bffb6bcc5f89dda97f91e40c`**, and refuses any other. Do **not** edit that check to force another
-> firmware through: the wrong addresses can leave the unit unable to boot. Not for the HX Stomp, Stomp XL, HX One,
-> Helix or POD Go. A future Line 6 firmware needs a new port, not a new MD5.
+> firmware through: the wrong addresses can leave the unit unable to boot.
 
 **You do this at your own risk.** Don't attempt it unless you're comfortable with command-line tools and with
 recovering the unit yourself ([Recovery](#recovery)).
@@ -21,8 +28,8 @@ recovering the unit yourself ([Recovery](#recovery)).
 
 | Build | What's in it | Command | File |
 |---|---|---|---|
-| **NAM** | NAM A2 Lite, Click | `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM.hxf` |
-| **NAM + Amps** | the above + 111 amps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
+| **NAM** | NAM A2 Lite, Click (metronome)| `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM.hxf` |
+| **NAM + Amps** | the above + 111 of the HX Stomp's amps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
 | **NAM + Amps + Effects** | the above + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
 
 Each command builds the image, checks it, and prints its MD5 and the flash command. Flash only an image that
