@@ -2,11 +2,15 @@
 """One command for each HX Effects build. Each builds the image, then checks it with the repo's verifier;
 only an image that ends "ALL OK" should be flashed.
 
-usage: python3 build.py nam|full [--quick] [-- extra options for the builder]
+usage: python3 build.py nam|full [--quick] [--no-amps] [-- extra options for the builder]
 
   nam    NAM A2 Lite + Click                      build_nam_click.py --nam-host regal
   full   NAM A2 Lite + Click + the extra effects  build_all.py
          (Geiger, Commander, Corrupt, Ottobit, Doom Chug)
+
+Both then get Line 6's 111 HX Stomp amps in a new Distortion > Amps list (build_amps.py --set all, checked by
+tools/verify_amps.py), with the USB memory window and log reader (tools/memwin.py) that the amps were tested with.
+No stock block is replaced for them. --no-amps stops after the first image, as before.
 
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
 Before the build, build_effects.py and build_click.py make the single NAM and Click images the verifiers
@@ -61,10 +65,18 @@ def main():
     man = next((ln.split('manifest', 1)[1].strip() for ln in log.splitlines() if ln.startswith('[+] manifest')), None)
     out = next(ln.split('Done:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done:'))
     report = step([verifier] + ([man] if man else []), quiet=False)
-    md5 = hashlib.md5(open(out, 'rb').read()).hexdigest()
     rel = os.path.relpath(out, HERE)
     if 'ALL OK' not in report.splitlines()[-1]:
         sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
+    if '--no-amps' not in argv:
+        log = step(['build_amps.py', '--set', 'all', '--base-file', rel, '--base-check', verifier] + ([man] if man else []))
+        amps_man = next(ln.split('verify_amps.py', 1)[1].strip() for ln in log.splitlines() if 'verify_amps.py' in ln)
+        out = os.path.join(HERE, next(ln.split('Done:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done:')))
+        report = step(['tools/verify_amps.py', amps_man], quiet=False)
+        rel = os.path.relpath(out, HERE)
+        if 'ALL OK' not in report.splitlines()[-1]:
+            sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
+    md5 = hashlib.md5(open(out, 'rb').read()).hexdigest()
     print(f'\n{mode}: {rel}\nMD5 {md5}, verified ALL OK\n'
           f'Flash: echo flash | .venv/bin/python tools/flash.py flash {rel}')
 

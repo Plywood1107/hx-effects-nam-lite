@@ -109,8 +109,11 @@ own tools are in version control.
 
 ```
 python3 -m venv .venv && source .venv/bin/activate
-pip install numpy
+pip install numpy unicorn==2.1.4 capstone==5.0.9 pyusb libusb-package
 ```
+
+(unicorn and capstone are for the amps' read-back check, `tools/verify_amps.py`; pyusb and libusb-package for the
+USB tools.)
 
 The kernel checks also need a C compiler (`cc`; on a Mac, `xcode-select --install`).
 
@@ -118,8 +121,11 @@ The kernel checks also need a C compiler (`cc`; on a Mac, `xcode-select --instal
 
 | Build | What's in it | Command | Writes |
 |---|---|---|---|
-| NAM | NAM A2 Lite + Click | `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM_Click_NamRegal.hxf` |
-| Full | the above + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_All_Commander_Corrupt_Ottobit_Doomchug.hxf` |
+| NAM | NAM A2 Lite + Click + 111 amps | `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM_Click_NamRegal_MemWin_Amps_all.hxf` |
+| Full | the above + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_All_Commander_Corrupt_Ottobit_Doomchug_MemWin_Amps_all.hxf` |
+
+`--no-amps` builds the images without the amps, as before (`..._NAM_Click_NamRegal.hxf`,
+`..._All_Commander_Corrupt_Ottobit_Doomchug.hxf`).
 
 Each command does the whole job:
 
@@ -127,7 +133,9 @@ Each command does the whole job:
    `--quick` skips this step when both images already exist.
 2. It builds the image you asked for. Every DSP kernel is first checked bit for bit in the simulator.
 3. It reads the image back with its verifier (`tools/verify/verify_nam_click.py` or `verify_all.py`).
-4. It prints the file, its MD5 and the flash command.
+4. It adds the amps on top (`build_amps.py --set all`, see [Amps](#amps-the-hx-stomps-111-amps)) and reads that
+   image back with `tools/verify_amps.py`.
+5. It prints the file, its MD5 and the flash command.
 
 Flash only an image that ends `verified ALL OK`; if verification fails, the build says so and exits with an
 error. In both images NAM is under **Distortion → Mono** (in place of the mono Regal Bass DI), so a cab IR can
@@ -164,6 +172,26 @@ compiler (`cc`) for those checks. Other combinations:
 
 Every one of these has been flashed and worked on the unit, though the older ones were tested with NAM
 in the IR category.
+
+## Amps: the HX Stomp's 111 amps
+
+The HX Effects firmware carries Line 6's amp models but never lists them. Both builds add every amp the HX Stomp
+lists (94 guitar, 17 bass) under **Distortion → Amps**, a fourth list after Mono, Stereo and Legacy, under their own
+names and with the HX Stomp's own preset ids and DSP costs. No stock block is replaced. The first fifteen are a
+chosen favourite set (US Small Tweed, US Double Nrm, Tweed Blues Brt, WhoWatt 100, Cartographer, Moo)))n Jump,
+Mandarin Rocker, Brit 2203, Placater Dirty, Brit Plexi Jump, Archetype Lead, EV Panama Red, Line 6 Badonk, Mandarin
+Bass 200, Ampeg SVT-4 PRO), then the rest in the Stomp's order.
+
+- **Up to three amps per preset.** The HX Effects' DSP has three slots that can hold an amp, as the Stomp's does.
+- Amps only: no preamps, no cabs (use an IR block after the amp).
+- Each amp has the Stomp's knobs. HX Edit doesn't know these blocks on an HX Effects; edit them on the unit.
+- The images also carry a small USB **memory window and log reader** (`tools/memwin.py check | log | fault`), which
+  the amps were developed and tested with. It changes nothing you can see on the unit.
+
+What it takes (details in [docs/amps-findings.md](docs/amps-findings.md)): the app's block table moves to free
+memory with a row per amp; the three amp-capable DSP slots get the block records the app ties to them; the block
+allocator, an amp registry and the placement limit are patched; and the list screen learns to show a fourth list.
+Tested on the unit on 2026-11-17: all 111 amps load and play, alone and after NAM, with Click in the preset.
 
 ## Click: a metronome block
 
@@ -429,9 +457,7 @@ small header. Loading one into the stock 2048‑sample IR block does nothing use
 - Presets store the slot number, not the capture: moving a capture to another slot means updating the
   presets that use it.
 - Only 3‑channel A2 Lite captures fit; standard and A2 Full captures don't.
-- **Line 6's own amps can't be added.** The firmware still holds all of them, and small ones ran as effect
-  blocks, but every attempt to run the bigger ones locked the unit's screen (2026‑11‑11 to 13; see
-  HANDOVER.md). The idea is dropped.
+- **Amps:** at most three per preset; no preamps or cabs; HX Edit can't edit them.
 - The block's DSP cost is declared as 2300 (like a heavy stock block), so the unit greys out other heavy
   blocks beside it.
 
@@ -555,6 +581,13 @@ src/sharc/nam_a2.asm      the reference NAM A2 implementation the simulator chec
 tools/verify/             read-back checks of the Click, NAM + Click and all-in-one images
 effects/                  custom effects: C references, tests, renderer, SHARC kernels (effects/README.md)
 docs/baseline-audit.md    the primitive ABI and memory map, marked observed / modelled / unknown
+build_amps.py             the amps on top of a built image (build.py runs it; --no-amps skips it)
+tools/amps_group.py, amp_patch.py, amp_list.py, memwin_patch.py, thumb1.py
+                          the Amps list, what lets amp blocks run, the 111 amps, the memory window
+tools/verify_amps.py      read-back check of an amps image (emulates the app's table and list code)
+tools/memwin.py           read the unit's log and memory over USB (check, log, fault, peek)
+re/                       firmware readers used by the checks (fw.py, graphs.py) and re/stomp_amps.py
+docs/amps-findings.md     how the amps were found to work, with every address
 ```
 
 ## Copyright notice
