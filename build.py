@@ -5,12 +5,12 @@ only an image that ends "ALL OK" should be flashed.
 usage: python3 build.py nam|amps|full [--quick] [-- extra options for the builder]
 
   nam    NAM A2 Lite + Click                                   -> build/HX_Effects_v3.80.0_NAM.hxf
-  amps   NAM A2 Lite + Click + 111 amps                        -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
-  full   NAM A2 Lite + Click + 111 amps + Geiger, Commander,   -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
+  amps   NAM A2 Lite + Click + 111 amps + 112 preamps          -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
+  full   NAM A2 Lite + Click + amps + preamps + Geiger, Commander, -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
          Corrupt, Ottobit, Doom Chug
 
 nam and amps use build_nam_click.py --nam-host regal, full uses build_all.py; amps and full then add the amps
-(build_amps.py --set all, checked by tools/verify_amps.py, with the USB log reader tools/memwin.py).
+and preamps (build_amps.py --set all --preamps all: Distortion > Amps, EQ > Preamps; checked by tools/verify_amps.py, with the USB log reader tools/memwin.py).
 
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
 Before the build, build_effects.py and build_click.py make the single NAM and Click images the verifiers
@@ -71,7 +71,7 @@ def main():
     if 'ALL OK' not in report.splitlines()[-1]:
         sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
     if amps:
-        log = step(['build_amps.py', '--set', 'all', '--base-file', rel, '--base-check', verifier] + ([man] if man else []))
+        log = step(['build_amps.py', '--set', 'all', '--preamps', 'all', '--base-file', rel, '--base-check', verifier] + ([man] if man else []))
         amps_man = next(ln.split('verify_amps.py', 1)[1].strip() for ln in log.splitlines() if 'verify_amps.py' in ln)
         out = os.path.join(HERE, next(ln.split('Done:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done:')))
         report = step(['tools/verify_amps.py', amps_man], quiet=False)

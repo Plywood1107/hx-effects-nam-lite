@@ -7,10 +7,14 @@ Mod/Chorus Echo:
 | Mode | Contents | Pipeline | Output | MD5 |
 |---|---|---|---|---|
 | `nam` | NAM + Click | `build_nam_click.py --nam-host regal` | `build/HX_Effects_v3.80.0_NAM.hxf` | `24b00640…` |
-| `amps` | + Line 6's 111 HX Stomp amps (Distortion → Amps) | the above, then `build_amps.py --set all --base-file …` | `…_NAM_Amps.hxf` | `e2162bca…` |
-| `full` | + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `build_all.py`, then `build_amps.py` | `…_NAM_Amps_Effects.hxf` | `edd48969…` |
+| `amps` | + Line 6's 111 HX Stomp amps (Distortion → Amps) and 112 preamps (EQ → Preamps) | the above, then `build_amps.py --set all --preamps all --base-file …` | `…_NAM_Amps.hxf` | `0dcbad07…` |
+| `full` | + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `build_all.py`, then `build_amps.py` | `…_NAM_Amps_Effects.hxf` | `a27dfeda…` |
 
-All three were played on the unit on 2026‑11‑17; the full image is what's on it now. The amp images carry the
+All three were played on the unit on 2026‑11‑17 (amps and full first without preamps, `e2162bca…` / `edd48969…`,
+kept as the recovery position below; then full + preamps, `a27dfeda…`, which is what's on the unit now; the
+`amps` + preamps image `0dcbad07…` is verified but was not flashed). The MD5s above are for build.py's output,
+whose last step was run directly with `build_amps.py` on the existing bases; a full `build.py` run with preamps
+has not been done. The amp images carry the
 USB memory window (`tools/memwin.py`) for reading the unit's log. The README (rewritten 2026‑11‑17 in
 0e59a43, then edited by the user on GitHub in ede738a: their own intro and voice, keep it) covers only these three builds and the install; everything else lives here and in `docs/`. The older
 builders (`build_effects.py` NAM in the IR category, `build_click.py`, `build_all.py --with …`) still work and
@@ -390,12 +394,24 @@ list under Distortion (`tools/amps_group.py`), so no stock block is replaced. Th
 
 `build.py amps|full` end with `build_amps.py --set all --base-file <image> --base-check <its verifier>` and
 `tools/verify_amps.py`; `build.py nam` stops before the amps. Each copies its final image to a plain name in build/.
-Limits: three amps per preset (placement limit patched to 3; the DSP has three amp slots, fx.13..fx.15); no preamps
-or cabs (the user dropped them: preamps are a data job like the amps, legacy cabs need the cab limit and unstudied
+Limits: three amps and preamps per preset together (placement limit patched to 3; the DSP has three amp slots,
+fx.13..fx.15; preamps are amp-type blocks, 0x11). No cabs (the user dropped them: legacy cabs need the cab limit and unstudied
 screens, new-style cabs need the Stomp's 54 MB cab package, absent here). The images keep the USB memory window
 (`tools/memwin.py`). On the unit (2026-11-17): the NAM + Click + amps image (MD5 e2162bcaf9d295612c24ebe1161c7df0,
-the same bytes `build.py amps` now makes) played NAM, an amp after it and Click; all 111 amps loaded on the
+what `build.py amps` made before the preamps) played NAM, an amp after it and Click; all 111 amps loaded on the
 stock-based image. The full + amps image (MD5 edd48969de189b3686bcb8bdfc5f2e93) was flashed on 2026-11-17 and boots: no fault, the same boot-log lines as the NAM + amps image; the user's test the same day: "All played" (the effects, NAM and amps). Its log: 367 model changes, all successful, presets saved, no fault. New in this log only: 34 lines `UNKNOWN FOOTSWITCH MODE 11` + `app.c:1624 ERROR_INVALID_PARAMETER` in one burst after a model change; the message is in the HX Effects' own footswitch code (not in the Stomp's); cause not looked into.
+
+**Preamps (2026-11-17, user asked):** `build_amps.py --preamps all` adds every preamp the HX Stomp lists (112:
+94 guitar, 17 bass, 1 mic "Studio Tube Pre"; `tools/preamp_list.py`, written by `re/stomp_amps.py` from the Stomp's
+Preamp category 13) as an "EQ → Preamps" list: Distortion already has the four lists the menu allows, so the
+preamps take EQ's third list slot (stock EQ has 2 lists and an unused third slot already named "Legacy", renamed).
+Their Table 1 rows follow the amps' in the same segment (689 rows), their items follow the Amps items. Same
+container and type (0x11) as the amps, so the three-per-preset limit covers both; names are the Stomp's (each the
+same as its amp). Every preamp fits the amp container (largest 1350 DM / 506 PM / 154 members). verify_amps.py checks
+it all (rows against the Stomp's Table 1, the EQ menu, the three-list EQ view emulated, DSP fit); the amps-only
+image still comes out byte-identical (e2162bca). On the unit: full + preamps (a27dfedaff7a803b7f92ccae6b3b8b60)
+flashed 2026-11-17, boots, no fault, boot errors unchanged; user: "All played"; log 69 model changes, all
+successful, zero errors. The Stomp firmware is now also in this repo's (ignored) firmware/ for the cross-check.
 
 ## Stock amps: tried and dropped (2026-11-11 to 13)
 

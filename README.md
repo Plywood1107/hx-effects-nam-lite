@@ -6,7 +6,7 @@ This repo adds amp modelling capability to the Line 6 HX Effects in two ways:
 
 **Neural Amp Modeler (NAM) A2 Lite** captures can be loaded as IR files into the unit's, into the NAM A2 Lite block in Distortion>Mono
 
-**Line 6's own 111 HX Stomp amps now run on the device**- these were already in the firmware, but never listed. There is a new Amps group under the Distortion category.
+**Line 6's own 111 HX Stomp amps and 112 preamps now run on the device**- these were already in the firmware, but never listed. There is a new Amps group under the Distortion category and a Preamps group under EQ.
 
 The repo includes tools to flash new firmware to the unit independent of Line 6 tools, and to convert NAM files so they can be loaded into the IR storage on the unit.
 
@@ -31,7 +31,7 @@ recovering the unit yourself ([Recovery](#recovery)).
 | Build | What's in it | Command | File |
 |---|---|---|---|
 | **NAM** | NAM A2 Lite, Click (metronome)| `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM.hxf` |
-| **NAM + Amps** | the above + 111 of the HX Stomp's amps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
+| **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
 | **NAM + Amps + Effects** | the above + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
 
 Each command builds the image, checks it, and prints its MD5 and the flash command. Flash only an image that
@@ -50,8 +50,9 @@ full build).
 | Ch Vol | Output level (0 dB at 5.0) |
 | Polarity | Normal / Inverted |
 
-**Amps** — Distortion → Amps: every amp the HX Stomp has (94 guitar, 17 bass), with the Stomp's knobs. Up to
-three per preset. No stock block is replaced. These images also carry a small USB diagnostic interface
+**Amps** — Distortion → Amps: every amp the HX Stomp has (94 guitar, 17 bass), with the Stomp's knobs.
+**Preamps** — EQ → Preamps: every preamp the HX Stomp has (94 guitar, 17 bass, 1 mic); as on the Stomp, each has
+its amp's name. Up to three amps and preamps per preset. No stock block is replaced. These images also carry a small USB diagnostic interface
 (`tools/memwin.py`) for reading the unit's log.
 
 **Effects** — each takes over the stock block in brackets (any stereo version stays):
@@ -105,7 +106,7 @@ Needs macOS or Linux (on Windows, build under WSL and flash with Line 6 Updater)
 - HX Edit can't edit NAM, the amps or the effects ("code −8200"); edit them on the unit. IR import works.
 - NAM's Model knob reaches User IR slots 1–21. Presets store the slot number, not the capture.
 - Only 3-channel A2 Lite captures fit.
-- Amps: three per preset at most; no preamps or cabs (put an IR block after the amp).
+- Amps and preamps: three per preset at most, together; no cabs (put an IR block after the amp).
 - With one NAM in each path of a split, the bottom path is quieter.
 - Doom Chug's Chug knob does little except lower the level.
 

@@ -14,11 +14,12 @@ MD5, and tools/verify/verify_nam_click.py on it), and sections 2..7 compare agai
    The application's own table code, emulated on the stock and on the new image: the start-up routine builds the
    preset-id map and sorts the table; then both binary searches find every stock block with its stock cost and
    preset id, find every amp, and still fail for an unknown name.
-5. The menu: Distortion has four lists named Mono, Stereo, Legacy, Amps; the Amps items are right; every other
-   list and count is stock.
+5. The menu: Distortion has four lists named Mono, Stereo, Legacy, Amps; the Amps items are right; with preamps,
+   EQ has three lists, Mono, Stereo, Preamps, and the Preamps items are right; every other list and count is stock.
 5b. The list view's own code, emulated: three names at a time, the highlight never past the third.
 6. What lets amp blocks run (flow slots, allocator, registry, limit) is as in the verified build_real.py image.
-7. Each amp's DSP graph fits the amp container's model slot and uses only routines in the unit's DSP program.
+7. Each amp's and preamp's DSP graph fits the amp container's model slot and uses only routines in the unit's DSP
+   program.
 """
 import hashlib
 import json
@@ -57,6 +58,8 @@ stock_path = os.path.join(ROOT, 'firmware', 'HX_Effects_v3.80.0_0xd97239907.hxf'
 stomp_path = os.path.join(ROOT, 'firmware', 'HX_Stomp_v3.80.0_0x103966115.hxf')
 A = pa.EFFECTS_E0
 SEG = man['segment']
+PRE = man.get('preamps', [])
+ALL = man['amps'] + PRE
 base_path = os.path.join(ROOT, man['base']) if man.get('base') else stock_path
 BASE = f'the base image' if man.get('base') else 'stock'
 
@@ -109,7 +112,7 @@ for c in man['memwin_changes'] + man['amp_changes']:
     allowed |= set(range(o, o + c['length']))
 d0 = {i for i in range(len(e0o)) if e0n[i] != e0o[i]}
 check(d0 <= allowed, f'inside {BASE}\'s part: {len(d0)} bytes differ, all in the {len(man["memwin_changes"])} memory-window and {len(man["amp_changes"])} amp changes or the header')
-e0b, chb, infob = build_amps.entry0(e0o, e3, man['amps'])
+e0b, chb, infob = build_amps.entry0(e0o, e3, man['amps'], PRE)
 check(e0b == e0n and infob == SEG, f'Entry 0 is exactly: {BASE} -> memory window -> amp changes -> the new segment')
 
 print('3. the boot stage will load it')
@@ -143,9 +146,10 @@ stock_rows = [struct.unpack_from('<IHHI', stock_rows_b, 12 * i) for i in range(A
 n = SEG['rows']
 rows = [struct.unpack_from('<IHHI', seg, 12 * i) for i in range(n)]
 amp_rows = rows[A.TAB1_CNT:]
-want = [(pa.find_model(info, a)['words'][2], ag.AMPS[a][0], 0, ag.AMPS[a][1]) for a in man['amps']]
-check(seg[:12 * A.TAB1_CNT] == stock_rows_b and amp_rows == want and n == A.TAB1_CNT + len(man['amps']),
-      f'{A.TAB1_CNT} rows of {BASE} byte for byte, then {len(amp_rows)} amp row(s): {amp_rows}')
+want = [(pa.find_model(info, a)['words'][2], ag.COSTS[a][0], 0, ag.COSTS[a][1]) for a in ALL]
+check(seg[:12 * A.TAB1_CNT] == stock_rows_b and amp_rows == want and n == A.TAB1_CNT + len(ALL),
+      f'{A.TAB1_CNT} rows of {BASE} byte for byte, then {len(man["amps"])} amp row(s)'
+      + (f' and {len(PRE)} preamp row(s)' if PRE else '') + f': {amp_rows}')
 check(len({r_[0] for r_ in rows}) == n and len({r_[1] for r_ in rows}) == n and max(r_[1] for r_ in rows) < ag.PRESET_MAP_ENTRIES,
       f'every name index and preset id unique; highest preset id {max(r_[1] for r_ in rows)} fits the {ag.PRESET_MAP_ENTRIES}-entry map')
 if os.path.isfile(stomp_path):
@@ -153,12 +157,12 @@ if os.path.isfile(stomp_path):
     s0 = bytes(pa.get_entry_swapped(sarc, 0))
     sinfo = pa.parse_entry3_full(bytes(pa.get_entry_swapped(sarc, 3)))
     good = []
-    for a in man['amps']:
+    for a in ALL:
         sidx = pa.find_model(sinfo, a)['words'][2]
-        row = struct.pack('<IHHI', sidx, ag.AMPS[a][0], 0, ag.AMPS[a][1])
+        row = struct.pack('<IHHI', sidx, ag.COSTS[a][0], 0, ag.COSTS[a][1])
         o = s0.find(row)
         good.append(o > 0 and s0.find(row, o + 1) < 0)
-    check(all(good), 'each amp\'s preset id and cost are those in the HX Stomp\'s Table 1 (its row is there, once)')
+    check(all(good), 'each amp\'s' + (' and preamp\'s' if PRE else '') + ' preset id and cost are those in the HX Stomp\'s Table 1 (its row is there, once)')
 else:
     note('the HX Stomp firmware is not in firmware/: the preset ids and costs (tools/amp_list.py) are not re-checked '
          'against it here (they were when the list was written, in hx-effects-stomp)')
@@ -224,7 +228,7 @@ check(r0o == 0 and tabo == sorted(stock_rows) and all(reso[r_[0]] == (0, r_[3], 
       f'{BASE}\'s code on its own table (the emulation is sound): sorted, all {len(stock_rows)} blocks found, an unknown name gives -21')
 check(r0n == 0 and tabn == sorted(rows) and len(tabn) == n, f'new image: the start-up routine sorts all {n} rows in the new segment')
 check(all(resn[r_[0]] == (0, r_[3], 0, r_[1]) for r_ in stock_rows), f'new image: all {len(stock_rows)} blocks of {BASE} found with their cost and preset id')
-check(all(resn[r_[0]] == (0, r_[3], 0, r_[1]) for r_ in amp_rows), f'new image: every amp found: {[(r_[0], resn[r_[0]][1], resn[r_[0]][3]) for r_ in amp_rows]} (name index, cost, preset id)')
+check(all(resn[r_[0]] == (0, r_[3], 0, r_[1]) for r_ in amp_rows), f'new image: every amp{" and preamp" if PRE else ""} found: {[(r_[0], resn[r_[0]][1], resn[r_[0]][3]) for r_ in amp_rows]} (name index, cost, preset id)')
 check(resn[UNKNOWN][0] == 0xFFFFFFEB and resn[UNKNOWN][2] == 0xFFFFFFEB, 'new image: an unknown name still gives -21 from both searches')
 check(all(mapn[r_[1]] == r_[0] for r_ in rows) and [i for i, v in enumerate(mapn) if v != 0xFFFFFFFF and i not in {r_[1] for r_ in rows}] == []
       and all(mapn[i] == mapo[i] for i in range(ag.PRESET_MAP_ENTRIES) if i not in {r_[1] for r_ in amp_rows}),
@@ -245,12 +249,25 @@ def u32(va, e=None, sg=None):
 
 lists_n = [(u32(A.BLIST_PTR_TAB + 4 * s), u32(A.BLIST_CNT_TAB + 4 * s)) for s in range(52)]
 lists_o = [(u32(A.BLIST_PTR_TAB + 4 * s, e0o, so), u32(A.BLIST_CNT_TAB + 4 * s, e0o, so)) for s in range(52)]
-check(lists_n[3] == (SEG['items_va'], len(man['amps'])) and [lists_n[s] for s in range(52) if s != 3] == [lists_o[s] for s in range(52) if s != 3],
-      f'list 3 (Distortion\'s fourth): {len(man["amps"])} item(s) at {SEG["items_va"]:#x}; the other 51 lists are as on {BASE}')
+PSLOT = 4 * ag.CAT_EQ + ag.PREAMPS_LIST
+changed = {3: (SEG['items_va'], len(man['amps']))}
+if PRE:
+    changed[PSLOT] = (SEG['preamps_va'], len(PRE))
+check(all(lists_n[s] == v for s, v in changed.items()) and [lists_n[s] for s in range(52) if s not in changed] == [lists_o[s] for s in range(52) if s not in changed],
+      f'list 3 (Distortion\'s fourth): {len(man["amps"])} item(s) at {SEG["items_va"]:#x}'
+      + (f'; list {PSLOT} (EQ\'s third): {len(PRE)} item(s) at {SEG["preamps_va"]:#x}' if PRE else '')
+      + f'; the other {52 - len(changed)} lists are as on {BASE}')
 cnt_n = [u32(A.SUBCAT_CNT + 4 * c) for c in range(13)]
 cnt_o = [u32(A.SUBCAT_CNT + 4 * c, e0o, so) for c in range(13)]
+cnt_w = list(cnt_o)
+cnt_w[0] = 4
+if PRE:
+    cnt_w[ag.CAT_EQ] = 3
 nm = [rd(A.SUBCAT_NAMES + 26 * k, 26).split(b'\0')[0].decode() for k in range(4)]
-check(cnt_n == [4] + cnt_o[1:] and cnt_o[0] == 3 and nm == ['Mono', 'Stereo', 'Legacy', 'Amps'], f'Distortion has {cnt_n[0]} lists: {nm}; the other categories\' counts are as on {BASE}')
+nm_eq = [rd(A.SUBCAT_NAMES + 26 * (4 * ag.CAT_EQ + k), 26).split(b'\0')[0].decode() for k in range(4)]
+check(cnt_n == cnt_w and cnt_o[0] == 3 and cnt_o[ag.CAT_EQ] == 2 and nm == ['Mono', 'Stereo', 'Legacy', 'Amps']
+      and nm_eq == (['Mono', 'Stereo', 'Preamps', ''] if PRE else ['Mono', 'Stereo', 'Legacy', '']),
+      f'Distortion has {cnt_n[0]} lists: {nm}; EQ has {cnt_n[ag.CAT_EQ]}: {nm_eq[:cnt_n[ag.CAT_EQ]]}; the other categories\' counts are as on {BASE}')
 items = [rd(SEG['items_va'] + 48 * k, 48) for k in range(len(man['amps']))]
 good = True
 for it, a, row in zip(items, man['amps'], amp_rows):
@@ -258,6 +275,15 @@ for it, a, row in zip(items, man['amps'], amp_rows):
     good &= struct.unpack_from('<IIIH', it, 0) == (0x11, row[0], 0xFFFFFFFF, row[1]) and it[14:40].split(b'\0')[0].decode('latin1') == m['displayName'] \
         and it[40:] == bytes.fromhex('0100000000000000') and (m.get('meta') or {}).get('category') == 'amp'
 check(good, f'Amps items: type 0x11, the amp\'s own name index and preset id, names {[it[14:40].split(bytes(1))[0].decode() for it in items]}')
+if PRE:
+    pitems = [rd(SEG['preamps_va'] + 48 * k, 48) for k in range(len(PRE))]
+    good = SEG['preamps_va'] == SEG['items_va'] + 48 * len(man['amps'])
+    for it, a, row in zip(pitems, PRE, amp_rows[len(man['amps']):]):
+        m = pa.find_model(info, a)
+        good &= struct.unpack_from('<IIIH', it, 0) == (0x11, row[0], 0xFFFFFFFF, row[1]) and it[14:40].split(b'\0')[0].decode('latin1') == m['displayName'] \
+            and it[40:] == bytes.fromhex('0100000000000000') and (m.get('meta') or {}).get('category') == 'preamp'
+    check(good, f'Preamps items (right after the Amps items): type 0x11, each preamp\'s own name index and preset id, '
+          f'names {[it[14:40].split(bytes(1))[0].decode() for it in pitems]}')
 host_item = [1 for s in range(3) for k in range(lists_n[s][1]) if rd(lists_n[s][0] + 48 * k + 14, 16).startswith(b'Arbitrator Fuzz')]
 check(len(host_item) == 2, 'Arbitrator Fuzz is back in the Mono and Stereo lists: no stock block is replaced')
 
@@ -384,7 +410,12 @@ w3n = View(e0n, sn, 3, 3, 7).walk(WALK)
 check(w3o == w3n and [x[2] for x in w3o] == [MSL] * 9 and [x[:2] for x in w3o] == [(0, 0), (1, 1), (2, 2), (2, 2), (2, 2), (1, 1), (0, 0), (0, 0), (0, 0)],
       'a three-list category (stock Distortion; Dynamics in the new image): Mono, Stereo, Legacy throughout, highlight 0-1-2, the same on both')
 w2o, w2n = View(e0o, so, 4, 2, 3).walk(WALK), View(e0n, sn, 4, 2, 3).walk(WALK)
-check(w2o == w2n and [x[:2] for x in w2o][:3] == [(0, 0), (1, 1), (1, 1)], 'a two-list category (EQ): identical on stock and new code')
+check(w2o == w2n and [x[:2] for x in w2o][:3] == [(0, 0), (1, 1), (1, 1)], 'a two-list category (stock EQ): identical on stock and new code')
+if PRE:
+    MSP = ['Mono', 'Stereo', 'Preamps']
+    weq = View(e0n, sn, 4, 3, 7).walk(WALK)
+    check([x[2] for x in weq] == [MSP] * 9 and [x[:2] for x in weq] == [(0, 0), (1, 1), (2, 2), (2, 2), (2, 2), (1, 1), (0, 0), (0, 0), (0, 0)],
+          'EQ with three lists: Mono, Stereo, Preamps throughout, highlight 0-1-2, as any stock three-list category')
 bug = View(e0n, sn, 2, 4, 15)
 bug.uc.mem_write(ag.SEL_LIMIT_VA, ag.SEL_LIMIT_STOCK)             # the new image's lists, but the stock highlight limit
 wb = bug.walk([1, 1, 1])
@@ -433,7 +464,7 @@ check(len(slot) == 1 and tuple(slot[0][13:15]) == (1430, 506) and slot[0][17] ==
       f'the amp container (HD2_AppAmpHarness) gives its model {slot[0][13]} DM words, {slot[0][14]} PM words, {slot[0][17]} members')
 proven = G.need(G.root('HD2_AmpTweedBluesBrt'))
 worst, bad = [0, 0, 0], []
-for a in man['amps']:
+for a in ALL:
     root, seen, pr = G.root(a), set(), set()
     todo = [root]
     while todo:
@@ -450,18 +481,18 @@ for a in man['amps']:
     worst = [max(worst[0], dm), max(worst[1], pm), max(worst[2], nmem)]
     if dm > slot[0][13] or pm > slot[0][14] or sd > slot[0][15] or nmem > slot[0][17] or [x for x in pr if x and x not in prims]:
         bad.append(a)
-check(not bad, f'every amp\'s graph fits it (largest: {worst[0]} DM, {worst[1]} PM, {worst[2]} members; Tweed Blues Brt, '
+check(not bad, f'every amp\'s{" and preamp" + chr(39) + "s" if PRE else ""} graph fits it (largest: {worst[0]} DM, {worst[1]} PM, {worst[2]} members; Tweed Blues Brt, '
       f'proven on the unit, is {proven[0]}, {proven[1]}, {proven[3]}) and uses only DSP routines the unit\'s DSP program has')
 
 if man.get('base'):
     Gs = graphs.Graphs(fw.App(stock_path))
     io_, ib_ = Gs.info, G.info
     same3 = all(pa.find_model(io_, a_)['words'] == pa.find_model(ib_, a_)['words'] and
-                pa.find_model(io_, a_)['params'] == pa.find_model(ib_, a_)['params'] for a_ in man['amps'])
+                pa.find_model(io_, a_)['params'] == pa.find_model(ib_, a_)['params'] for a_ in ALL)
     same4 = all(Gs.blob(pa.find_model(io_, a_)['blob_index']) == G.blob(pa.find_model(ib_, a_)['blob_index']) and
-                Gs.need(Gs.root(a_)) == G.need(G.root(a_)) for a_ in man['amps'])
+                Gs.need(Gs.root(a_)) == G.need(G.root(a_)) for a_ in ALL)
     harn = all(Gs.members(Gs.root(h)) == G.members(G.root(h)) for h in ('HD2_AppAmpHarness', 'HD2_AppAmpCabHarness'))
-    check(same3 and same4 and harn, f'the base leaves every amp as on stock: its model and parameters (Entry 3), its graph '
+    check(same3 and same4 and harn, f'the base leaves every amp{" and preamp" if PRE else ""} as on stock: its model and parameters (Entry 3), its graph '
           f'and memory need (Entry 4), and the amp container itself')
 
 print('ALL OK' if ok else 'PROBLEMS')
