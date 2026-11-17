@@ -18,6 +18,15 @@ are described below. A USB flasher installs any image without Line 6 Updater.
 This note is for picking the project up in Claude Code (or anywhere) without re‑deriving anything;
 the dated sections further down record how things were found.
 
+**Recovery position (2026‑11‑17).** Git tag `three-builds-2026-11-17` (commit 128daa7) is the code that builds
+the three tested images (the same code made the images now in `build/`, whose MD5s match the tested ones; a clean
+rebuild from the tag was not run). Copies of the three images
+and the stock firmware, with `MD5SUMS` and a `README.txt` (flash and rebuild steps), are in
+`~/hx-effects-images/2026-11-17/`, outside the repo (Line 6 derivatives: never commit or share). To get back: flash
+the wanted copy (`echo flash | .venv/bin/python tools/flash.py flash ~/hx-effects-images/2026-11-17/<file>`), or
+`git checkout three-builds-2026-11-17` and `python build.py nam|amps|full`. Unit won't boot: hold > at power-on,
+Line 6 Updater, the stock file. Back up presets and IRs in HX Edit before any new image.
+
 ## What exists
 
 - **Repo:** `/Users/scott/hx-effects-nam-lite` → <https://github.com/scottlynn73/hx-effects-nam-lite>
@@ -241,22 +250,21 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
 3. ~~Strip the bisection switches from `tools/patch_amp.py`~~ — done 2026‑11‑03: all `NAM_*` env switches
    (except `NAM_DEVICE`) and the dead `add_model_entry0_effects()` removed; the build output is byte‑identical
    (MD5 `a27780d3ff57612ebd2484a4cc4a9f7e`). The HX Stomp `add-model` path is kept.
-4. Optional: open an issue/PR upstream with the findings (amp slots unused on the Effects, the −21
-   self‑test path, the identity takeover, fixed‑DDR2 kernel variant, the USB update protocol, the
-   image‑4 partition flag).
-5. Edge tests not yet done (each build can now be flashed with `tools/flash.py`): changing Model
-   while playing with two blocks; a preset with every heavy effect alongside; power‑cycle with a NAM
-   block in the startup preset.
-6. **Check NAM's footswitch bypass.** NAM's kernel clears instance word 3 every time it is set (it took it
-   for a knob‑write flag); with Click that defeated nothing (bypass is applied in the graph on a delay
-   host), but NAM's own bypass on its IR host has never been checked.
-7. The all‑in‑one Model knob reaches only User IR slots 1..21. Reaching all 128 needs a knob type the unit
-   draws on a Distortion page (a longer list broke page drawing for Click).
-8. Doom Chug's Chug knob (see above), if the user wants it fixed.
-9. More effects (Stutter, Grains, Sequence, Warp) need overlays, a stock block each (the user's choices:
-   Bleat Chop Trem, Pitch Echo, Mystery Filter, 4-Voice Chorus) and somewhere in DDR2 for the larger
-   rings. Two overlays in one preset swap every call: about 28,000 cycles a swap on the unit.
-10. **User IR upload without HX Edit** (user asked 2026‑11‑13; to do). A `tools/ir_upload.py` that writes `.wav`
+4. ~~Upstream issue/PR with the findings~~ — not doing (user, 2026‑11‑17).
+5. ~~Edge tests~~ (Model change while playing with two blocks, every heavy effect in one preset, power cycle
+   with NAM in the startup preset) — done by the user (2026‑11‑17).
+6. ~~NAM's footswitch bypass~~ — checked by the user, works (2026‑11‑17).
+7. ~~Model knob reaches only User IR slots 1..21~~ — fine as it is (user, 2026‑11‑17); don't pursue.
+8. **Doom Chug's Chug knob → Fuzz** (user wants it, 2026‑11‑17; to do). Today Chug scales the voices' gain by a
+   thud envelope (`cg = 1 - chug*(1 - env)`, env decaying in ~0.2 s from each pattern step), so at low Rate it
+   mostly lowers the level. Proposal: make the knob a drive (gain up to ~30x on the voice sum, then a soft clip,
+   level-compensated, before Tone), keeping the thud at a fixed modest depth, or as the old shelved idea had it,
+   Fuzz on the knob plus the thud elsewhere. Doom Chug is resident in Block 3 with only ~20‑30 words spare, so the
+   clip must be a few instructions (reuse the shared clamp; a cubic soft clip is ~5). C ref + tests + bit-exact
+   kernel as usual, then rebuild the full image (its MD5 changes) and ask before flashing.
+9. ~~More overlay effects (Stutter, Grains, Sequence, Warp)~~ — not doing (user, 2026‑11‑17). Stutter's code
+   lives on as the base for item 12.
+10. **User IR upload without HX Edit** (user asked 2026‑11‑13; later, user 2026‑11‑17). A `tools/ir_upload.py` that writes `.wav`
     files (and `.nam`, converting on the way) into numbered User IR slots over USB, e.g. a folder of `01 …wav`
     .. `19 …wav` into slots 1..19. Plan: capture HX Edit importing one IR with `tools/usb/usblog.dylib`
     (DYLD_INSERT_LIBRARIES, as for Line 6 Updater; HX Edit may have a hardened runtime, then another capture
@@ -268,6 +276,84 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
     runs the network in numpy (float64), checked against nam_a2.asm in ssim to 1.3e‑6 on a high-gain capture; ssim
     itself is too slow (over 50 M instructions for 0.5 s). A set of 19 user captures measured −29.1 .. −11.0 dB
     before matching. Only the output-scale word changes; the rest of the stream is identical.
+12. **Mandala-style glitch block** (user wants it, 2026‑11‑17; to do, nothing built). Modelled on the Bananana Effects
+    Mandala, a mini short-time sampler: modes Repeat, Random, Reverse, Trigger, Square Trigger, Square, Up, Down;
+    Time (repeat length, random at full), Func (speed x1/x2, reverse x½/x1/x2, octave-down mix in the Square modes),
+    latch/momentary (use the unit's own momentary footswitch setting), Kill Dry. No circuit to copy: built from the
+    descriptions, tuned by ear. Plan: extend `effects/stutter/` (already does Repeat/Random/Reverse/Trigger, speeds,
+    random length; C ref + bit-exact kernel, never in an image) with Corrupt's square tracker for the Square modes and
+    a pitch sweep for Up/Down (Warp's technique), plus a Dry knob. Runs as an overlay like Ottobit (no resident room).
+    To check first: DDR2 room for Stutter's 32,768-word ring (about 31K words were free above NAM's slots; recheck
+    with the amps images), the overlay swap cost beside Ottobit (~19 % DSP), and which stock block to give up (ask;
+    avoid tempo-sync hosts like Bleat Chop Trem, given Syntax's unexplained locks). Simulator first, then a test
+    image from `build.py full`; ask before flashing.
+13. **Greasy Strangler** (user wants it, 2026‑11‑17; to do, nothing built; the user's name for it). A drone that
+    follows the guitar: Doom Chug's four-voice drone (root, sharp root, fifth, octave; Drift/Warble) tuned to the
+    last note played, via Corrupt's pitch tracker, holding that note until a new one is detected, with a glide
+    between notes and a mix with the dry guitar. No audio buffer needed. Doom Chug and Commander/Corrupt are
+    resident with no room left, so it runs as an overlay like Ottobit (its own copies of the tracker and drone
+    code). Needs a stock block to replace (ask) and a check that "Greasy Strangler" (16 characters) fits the
+    browser name and the footswitch scribble strip, or a short form for the strip. C ref + tests + bit-exact
+    kernel, then a test image from `build.py full`; ask before flashing.
+14. **Beat It Rocket** (the user's name, was "Drums"; user wants it, 2026‑11‑17; to do, nothing built; 14 characters). A basic drum-machine block built on Click's timing
+    (exact rational accumulator, tap tempo via the host delay's Time, bar and 16th-note counting): synthesised kick
+    (sine with fast pitch drop + decay, Click's Rotor), snare (filtered noise burst + short tone), hi-hat (short
+    high-passed noise; xorshift noise as in Doom Chug). Patterns as 16-step bit grids per voice (as Doom Chug's
+    patterns), a Pattern list of up to ~20 (rock, half-time, four-on-the-floor, shuffle, motorik, ...), stock lists
+    stop at 21. Knobs (8 words): Time, Pattern, Kit, Kick, Snare, Hat, Swing, Level (Kit replaces Decay/Tone: each
+    kit sets its own decays and tone). Kits (user asked for several drum-machine sounds), all synthesised from one
+    set of voices with a table of settings per kit, so each extra kit is data, not code:
+    - **Boom** (808-style): long low sine kick with a slow pitch fall, snappy noise snare, metallic hat from six
+      detuned square oscillators;
+    - **Punch** (909-style): short tight kick with a fast sweep and click, brighter snare, bright noise hat;
+    - **Tick** (CR-78 / old preset-box style): soft short kick, small snare, ticky high hat;
+    - **Bit** (8-bit): square-wave kick and snare tone, noise at a low sample rate, crushed hat;
+    - **Doom** (user: "super low tuned and fuzzed out", 2026‑11‑17): every voice tuned way down (kick sweeping
+      to ~30 Hz with a long decay, snare body ~90 Hz with a thick noise tail, hat dark and low-passed), then the
+      whole kit through heavy fuzz: high gain (~40x) into a hard-ish clip, level-compensated, so hits smear into
+      a distorted wall. Shares the drive code with the other kits (they use little or none); the clip shape may
+      reuse what item 8's Chug fuzz ends up with;
+    - **Eighty** (LinnDrum-style, user asked 2026‑11‑17): the real ones play recorded drums, so this is the
+      closest synthesis: kick with a body tone plus a beater click, snare with two tuned body modes (~180 and
+      ~330 Hz) plus band-passed noise, crisp short hat, and a gated-reverb-style snare tail (a noise tail cut off
+      sharply after ~150 ms: no buffer). Expect "80s drum machine", not samples.
+    Labels on the unit stay generic (no product names). Extra code over the plain version: the six-oscillator hat,
+    the per-kit drive and the sample-rate hold for Bit; the rest is table data. Separate block, Click
+    unchanged: Click is resident with no room in the full build, so Beat It Rocket runs as an overlay like Ottobit. Host
+    must be a tempo-sync delay (ask which), copying Click's sync map nodes 0x2a/0x54. Unknown: whether enabling the
+    block restarts it at beat 1 (metronome.h notes the same open question); test on the unit. C ref + tests +
+    bit-exact kernel, then a test image from `build.py full`; ask before flashing.
+15. **Bethblahem** (the user's name; a mega low tuned theremin; user wants it, 2026‑11‑17; to do, nothing built;
+    11 characters; stock names as long as "Tweed Blues Brt" show on the scribble strip, so it should fit). Corrupt's pitch tracker drives a sine voice that glides between notes (Glide knob) with theremin
+    vibrato (Vibrato depth and Rate), transposed far down: Octave knob 0 to −4 (low E at 82 Hz → ~5 Hz at −4, so
+    the useful bottom is about −2 to −3, 10–20 Hz fundamentals). A pure sine that low is inaudible on most rigs, so
+    a Growl knob adds harmonics (soft clip / wavefold of the sine) so the pitch is heard through a guitar cab or
+    small speakers, plus a sub-octave mix and a Dry mix. Holds the last note while the tracker has nothing (as
+    Greasy Strangler, item 13; the two can share tracker and hold code). No buffer; overlay like Ottobit; needs a
+    stock block (ask). Watch: tracker lag on low notes; a 10 Hz sine at full level moves speaker cones hard, so
+    keep a high-pass / level limit option. C ref + tests + bit-exact kernel, test image from `build.py full`;
+    ask before flashing.
+16. **Puggy Puncher** (the user's name; a "slot machine" glitch; user wants it, 2026‑11‑17; to do, nothing built;
+    13 characters). On each step (Step knob: beat, 8th, 16th, synced via the host delay's Time like Click, with
+    Click's exact timing) it rolls a random treatment for that step: clean, octave down (Corrupt-style square
+    sub), bit crush / sample-rate hold (Geiger/Ottobit-style), mute, filter slam (resonant low-pass snapped shut),
+    fuzz (hard clip). Knobs (8 words): Time, Step, Chance (how often a step changes from clean), a mask or Wildness
+    choosing which treatments can come up, Hold (repeat the last roll for N steps), Mix, Level, and a Seed/pattern
+    list so a good run can be repeated. 32-sample crossfades at step edges to avoid clicks. No buffer (unless a
+    short "repeat this step" stutter is added later: then a small ring); overlay like Ottobit; host must be a
+    tempo-sync delay (ask which; Beat It Rocket, item 14, needs one too). C ref + tests + bit-exact kernel, test image from
+    `build.py full`; ask before flashing.
+17. **Reclaim memory** (user wants it, 2026‑11‑17; to do; worth doing before items 12–16). Goal: room for one or
+    more of the new effects to be resident instead of overlays, so two of them in one preset don't pay the
+    ~28,000-cycle swap (~19 % DSP) each call. Limits today: Block 3 has ~20‑30 words spare (cursor 0xe7c10 vs
+    0xe7c2f) and Entry 2's 512 KiB partition ~2 KB. Candidates: build Geiger's curve tables (1,040 words, now in
+    Blob 0) and any other kernel tables at start-up from a short generator instead of storing them; share common
+    routines between kernels (noise, clamp, one-pole filters, Click's timing accumulator, Corrupt's tracker, used
+    by items 13, 14, 15, 16); more zero-fill LDR records; see what else in Block 3 / Entry 2 is ours and
+    compressible (`docs/baseline-audit.md`, "Finding more memory"). Every change must keep the existing effects
+    bit-exact in ssim and the images' behaviour unchanged (rebuild and compare against the known MD5s where the
+    bytes should not move). Hidden-model scan done 2026‑11‑17: no hidden effects beyond amps, preamps, cabs,
+    harness/mic internals and sub-parts, so new sounds all need our own code.
 
 ## Don'ts
 
