@@ -2,15 +2,15 @@
 """One command for each HX Effects build. Each builds the image, then checks it with the repo's verifier;
 only an image that ends "ALL OK" should be flashed.
 
-usage: python3 build.py nam|full [--quick] [--no-amps] [-- extra options for the builder]
+usage: python3 build.py nam|amps|full [--quick] [-- extra options for the builder]
 
-  nam    NAM A2 Lite + Click                      build_nam_click.py --nam-host regal
-  full   NAM A2 Lite + Click + the extra effects  build_all.py
-         (Geiger, Commander, Corrupt, Ottobit, Doom Chug)
+  nam    NAM A2 Lite + Click                                   -> build/HX_Effects_v3.80.0_NAM.hxf
+  amps   NAM A2 Lite + Click + 111 amps                        -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
+  full   NAM A2 Lite + Click + 111 amps + Geiger, Commander,   -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
+         Corrupt, Ottobit, Doom Chug
 
-Both then get Line 6's 111 HX Stomp amps in a new Distortion > Amps list (build_amps.py --set all, checked by
-tools/verify_amps.py), with the USB memory window and log reader (tools/memwin.py) that the amps were tested with.
-No stock block is replaced for them. --no-amps stops after the first image, as before.
+nam and amps use build_nam_click.py --nam-host regal, full uses build_all.py; amps and full then add the amps
+(build_amps.py --set all, checked by tools/verify_amps.py, with the USB log reader tools/memwin.py).
 
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
 Before the build, build_effects.py and build_click.py make the single NAM and Click images the verifiers
@@ -20,14 +20,16 @@ compare against; --quick skips them when they already exist. Options after -- go
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
-MODES = {
-    'nam': (['build_nam_click.py', '--nam-host', 'regal'], 'tools/verify/verify_nam_click.py'),
-    'full': (['build_all.py'], 'tools/verify/verify_all.py'),
+MODES = {      # builder, its verifier, add the amps, final file name
+    'nam': (['build_nam_click.py', '--nam-host', 'regal'], 'tools/verify/verify_nam_click.py', False, 'NAM'),
+    'amps': (['build_nam_click.py', '--nam-host', 'regal'], 'tools/verify/verify_nam_click.py', True, 'NAM_Amps'),
+    'full': (['build_all.py'], 'tools/verify/verify_all.py', True, 'NAM_Amps_Effects'),
 }
 REFS = [('build_effects.py', 'build/HX_Effects_v3.80.0_NAM_A2_Lite.hxf'),
         ('build_click.py', 'build/HX_Effects_v3.80.0_Click.hxf')]
@@ -52,7 +54,7 @@ def main():
     if not argv or argv[0] not in MODES or '-h' in argv or '--help' in argv:
         sys.exit(__doc__)
     mode = argv[0]
-    builder, verifier = MODES[mode]
+    builder, verifier, amps, final = MODES[mode]
     for script, image in REFS:
         if '--quick' in argv and os.path.isfile(os.path.join(HERE, image)):
             print(f'(--quick: using the existing {image})')
@@ -68,7 +70,7 @@ def main():
     rel = os.path.relpath(out, HERE)
     if 'ALL OK' not in report.splitlines()[-1]:
         sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
-    if '--no-amps' not in argv:
+    if amps:
         log = step(['build_amps.py', '--set', 'all', '--base-file', rel, '--base-check', verifier] + ([man] if man else []))
         amps_man = next(ln.split('verify_amps.py', 1)[1].strip() for ln in log.splitlines() if 'verify_amps.py' in ln)
         out = os.path.join(HERE, next(ln.split('Done:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done:')))
@@ -76,9 +78,12 @@ def main():
         rel = os.path.relpath(out, HERE)
         if 'ALL OK' not in report.splitlines()[-1]:
             sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
+    named = os.path.join(HERE, 'build', f'HX_Effects_v3.80.0_{final}.hxf')
+    shutil.copyfile(out, named)
+    out, rel = named, os.path.relpath(named, HERE)
     md5 = hashlib.md5(open(out, 'rb').read()).hexdigest()
     print(f'\n{mode}: {rel}\nMD5 {md5}, verified ALL OK\n'
-          f'Flash: echo flash | .venv/bin/python tools/flash.py flash {rel}')
+          f'Flash: python tools/flash.py flash {rel}   (or Line 6 Updater: Choose File)')
 
 
 if __name__ == '__main__':

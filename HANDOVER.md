@@ -1,6 +1,6 @@
 # Handover: NAM A2 Lite on the Line 6 HX Effects
 
-Working state as of 2026‑11‑17 on branch `amps` (first written 2026‑11‑01): both builds now add Line 6's 111 HX Stomp amps (section "Stock amps: working"). `build.py` makes the two images in use, each
+Working state as of 2026‑11‑17 (first written 2026‑11‑01): `python3 build.py nam|amps|full` makes NAM + Click (`build/HX_Effects_v3.80.0_NAM.hxf`), + Line 6's 111 HX Stomp amps (`..._NAM_Amps.hxf`), + the extra effects (`..._NAM_Amps_Effects.hxf`); section "Stock amps: working". The notes below on the two older builds still describe how each base image is made. `build.py` makes the two images in use, each
 built, verified and printed with its MD5: `nam` (NAM + Click, `build_nam_click.py --nam-host regal`) and `full`
 (`build_all.py`: NAM, Click, Geiger, Commander, Corrupt, Ottobit and Doom Chug), both with NAM on the mono Regal
 Bass DI. The full default image (MD5 `7b291b5f…`) is what runs on the unit. The original NAM‑only image
@@ -288,10 +288,10 @@ added under their own identities, with Table 1 moved into a fifth Entry 0 segmen
 list under Distortion (`tools/amps_group.py`), so no stock block is replaced. The full story with addresses:
 `docs/amps-findings.md`.
 
-`build.py nam|full` now end with `build_amps.py --set all --base-file <image> --base-check <its verifier>` and
-`tools/verify_amps.py`; `--no-amps` gives the old images. The images keep the USB memory window
+`build.py amps|full` end with `build_amps.py --set all --base-file <image> --base-check <its verifier>` and
+`tools/verify_amps.py`; `build.py nam` stops before the amps. Each copies its final image to a plain name in build/. The images keep the USB memory window
 (`tools/memwin.py`). On the unit (2026-11-17): the NAM + Click + amps image (MD5 e2162bcaf9d295612c24ebe1161c7df0,
-the same bytes `build.py nam` now makes) played NAM, an amp after it and Click; all 111 amps loaded on the
+the same bytes `build.py amps` now makes) played NAM, an amp after it and Click; all 111 amps loaded on the
 stock-based image. The full + amps image (MD5 edd48969de189b3686bcb8bdfc5f2e93) was flashed on 2026-11-17 and boots: no fault, the same boot-log lines as the NAM + amps image; the user's test the same day: "All played" (the effects, NAM and amps). Its log: 367 model changes, all successful, presets saved, no fault. New in this log only: 34 lines `UNKNOWN FOOTSWITCH MODE 11` + `app.c:1624 ERROR_INVALID_PARAMETER` in one burst after a model change; the message is in the HX Effects' own footswitch code (not in the Stomp's); cause not looked into.
 
 ## Stock amps: tried and dropped (2026-11-11 to 13)
