@@ -454,7 +454,7 @@ characters ("Proggy 13/4", "Tomapalooza"); Drum Chapel's swap is 678 + 398 = 1,0
 0x294839), with the pack converted. With the footswitch fix (`plain_delay`, 14 Entry 0 bytes on top of that image):
 MD5 4eb77e0466f794be9f21db06f188454f, verified ALL OK, flashed 2026‑11‑18; the user played the grooves: "sounds good".
 
-**Drum Chapel's Acoustic kit (2026‑11‑18, not yet on the unit).** Kit 6, **Acoustic**: its kick and snare play
+**Drum Chapel's Acoustic kit (2026‑11‑18; image d1b14ce7 flashed, the user played it: "sounds good").** Kit 6, **Acoustic**: its kick and snare play
 recorded samples, its hat, tom and open hat are synthesised (the open hat, which plays every crash/ride/china of the
 grooves, is its closed hat a little open: same tone, 1.75 x the decay, 0.7 x the level; the first version's long
 wash sounded bad on the renders). The samples are the user's own bounces (a kick and a snare from their Logic
