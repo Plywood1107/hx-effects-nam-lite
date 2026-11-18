@@ -451,7 +451,8 @@ did not write (overlay DDR2 access itself is proven by Ottobit's and Pure Whitey
 characters ("Proggy 13/4", "Tomapalooza"); Drum Chapel's swap is 678 + 398 = 1,076 words (was 615 + 296), and its
 398 data words are now the overlay region's largest (Ottobit's 316 before). Image: `build.py full --quick` ->
 `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf`, MD5 09732d36f865985d41f4ee0d818bea8d, verified ALL OK (bank at DDR2
-0x294839), with the pack converted; not flashed.
+0x294839), with the pack converted. With the footswitch fix (`plain_delay`, 14 Entry 0 bytes on top of that image):
+MD5 4eb77e0466f794be9f21db06f188454f, verified ALL OK, flashed 2026‑11‑18; the user played the grooves: "sounds good".
 
 ## Don'ts
 
