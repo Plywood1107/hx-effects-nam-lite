@@ -1,0 +1,14 @@
+{
+  "id": "bethblahem",
+  "display_name": "Bethblahem",
+  "parameters": [
+    {"id": "octave", "display": "Octave", "type": "integer", "min": 0, "max": 4, "default": 2, "unit": "octaves down: 0 .. 4 (shown as 0 .. -4 Oct)", "smoothing": "immediate"},
+    {"id": "glide", "display": "Glide", "type": "continuous", "min": 0, "max": 1, "default": 0.4, "unit": "10 ms .. 2 s", "smoothing": "immediate"},
+    {"id": "vibrato", "display": "Vibrato", "type": "continuous", "min": 0, "max": 1, "default": 0.3, "unit": "depth, up to +-6 %", "smoothing": "immediate"},
+    {"id": "rate", "display": "Rate", "type": "continuous", "min": 0, "max": 1, "default": 0.4, "unit": "3 .. 8 Hz", "smoothing": "immediate"},
+    {"id": "growl", "display": "Growl", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "", "smoothing": "immediate"},
+    {"id": "sub", "display": "Sub", "type": "continuous", "min": 0, "max": 1, "default": 0.3, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "dry", "display": "Dry", "type": "continuous", "min": 0, "max": 1, "default": 0.7, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 0.7, "unit": "x (shown as %)", "smoothing": "immediate"}
+  ]
+}

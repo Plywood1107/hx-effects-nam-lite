@@ -53,7 +53,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.join(HERE, 'tools')
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
-          'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/probe/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc', 'effects/doomchug/sharc'):
+          'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/probe/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc', 'effects/doomchug/sharc',
+          'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc', 'effects/bethblahem/sharc', 'effects/puggy/sharc'):
     sys.path.insert(0, os.path.join(HERE, p))
 
 import build_click as bc  # noqa: E402
@@ -134,9 +135,65 @@ DOOMCHUG_PARAMS = (    # as GEIGER_PARAMS; the kernel reads words 5..11 and 13 (
     (3, 7,  'HD2_AmpLine6Clarity', 'Drive', 'Rate', 'Rate', 'knob', (0.0, 1.0), 0.5),
     (4, 8,  'HD2_AmpLine6Clarity', 'Bass', 'Drift', 'Drift', 'knob', (0.0, 1.0), 0.35),
     (5, 9,  'HD2_AmpLine6Clarity', 'Mid', 'Warble', 'Warble', 'knob', (0.0, 1.0), 0.5),
-    (6, 10, 'HD2_AmpLine6Clarity', 'Treble', 'Chug', 'Chug', 'knob', (0.0, 1.0), 0.4),
+    (6, 10, 'HD2_AmpLine6Clarity', 'Treble', 'Fuzz', 'Fuzz', 'knob', (0.0, 1.0), 0.3),
     (7, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Tone', 'Tone', 'knob', (0.0, 1.0), 0.25),
     (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
+)
+BETHBLAHEM_PARAMS = (    # the kernel reads words 5..11 and 13 (effects/bethblahem/sharc); Octave ints 0..4 = octaves down
+    (1, 5,  'HD2_DelayMultiPassMono', 'Pattern', 'Octave', 'Octave', LIST,
+     {0: '0 Oct', 1: '-1 Oct', 2: '-2 Oct', 3: '-3 Oct', 4: '-4 Oct'}, 2),
+    (2, 6,  'HD2_AmpLine6Clarity', 'Drive',    'Glide',   'Glide',   'knob',    (0.0, 1.0), 0.4),
+    (3, 7,  'HD2_AmpLine6Clarity', 'Bass',     'Vibrato', 'Vibrato', 'knob',    (0.0, 1.0), 0.3),
+    (4, 8,  'HD2_AmpLine6Clarity', 'Mid',      'Rate',    'Rate',    'knob',    (0.0, 1.0), 0.4),
+    (5, 9,  'HD2_AmpLine6Clarity', 'Treble',   'Growl',   'Growl',   'knob',    (0.0, 1.0), 0.5),
+    (6, 10, 'HD2_AmpLine6Clarity', 'Presence', 'Sub',     'Sub',     'percent', (0.0, 1.0), 0.3),
+    (7, 11, 'HD2_AmpLine6Clarity', 'Sag',      'Dry',     'Dry',     'percent', (0.0, 1.0), 0.7),
+    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol',    'Level',   'Level',   'percent', (0.0, 1.0), 0.7),
+)
+PUGGY_STEPS = ['1/2', '1/4.', '1/4', '1/4T', '1/8.', '1/8', '1/8T', '1/16.', '1/16', '1/16T', '1/32']
+PUGGY_WILDS = ['All', 'Gentle', 'Rhythm', 'Mean', 'Low', 'Dirt', 'Chop', 'Octave', 'Crush', 'Filter', 'Fuzz']
+PUGGY_PARAMS = (    # slot 1 is Time with the tempo-sync pair (sync_knob_params); the kernel reads words 5..11 and 13
+    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Step', 'Step', LIST, dict(enumerate(PUGGY_STEPS)), 8),
+    (3, 7,  'HD2_AmpLine6Clarity', 'Drive', 'Chance', 'Chance', 'percent', (0.0, 1.0), 0.5),
+    (4, 8,  'HD2_FM4SynthOMatic', 'Wave', 'Wild', 'Wild', LIST, dict(enumerate(PUGGY_WILDS)), 0),
+    (5, 9,  'HD2_TremoloPatternMono', 'Step1', 'Hold', 'Hold', LIST, {k: ('1 step' if k == 1 else f'{k} steps') for k in range(1, 9)}, 1),
+    (6, 10, 'HD2_DelayCrissCrossMono', 'Shape', 'Seed', 'Seed', LIST, {0: 'Random', **{k: str(k) for k in range(1, 17)}}, 0),
+    (7, 11, 'HD2_AmpLine6Clarity', 'Bass', 'Mix', 'Mix', 'percent', (0.0, 1.0), 1.0),
+    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 1.0),
+)
+GREASY_PARAMS = (    # the kernel reads words 5..11 and 13 (effects/greasy/sharc)
+    (1, 5,  'HD2_DelayMultiPassMono', 'Pattern', 'Octave', 'Octave', LIST, {0: '-2 Oct', 1: '-1 Oct', 2: 'Unison', 3: '+1 Oct'}, 1),
+    (2, 6,  'HD2_AmpLine6Clarity', 'Drive', 'Glide', 'Glide', 'knob', (0.0, 1.0), 0.3),
+    (3, 7,  'HD2_AmpLine6Clarity', 'Bass', 'Drift', 'Drift', 'knob', (0.0, 1.0), 0.25),
+    (4, 8,  'HD2_AmpLine6Clarity', 'Mid', 'Warble', 'Warble', 'knob', (0.0, 1.0), 0.35),
+    (5, 9,  'HD2_AmpLine6Clarity', 'Treble', 'Fuzz', 'Fuzz', 'knob', (0.0, 1.0), 0.3),
+    (6, 10, 'HD2_AmpLine6Clarity', 'Presence', 'Tone', 'Tone', 'knob', (0.0, 1.0), 0.35),
+    (7, 11, 'HD2_AmpLine6Clarity', 'Sag', 'Dry', 'Dry', 'percent', (0.0, 1.0), 1.0),
+    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
+)
+DRUMCHAPEL_PATTERNS = ['Rock', 'Half-Time', 'Four Floor', 'Disco', 'Shuffle', 'Motorik', 'Break', 'Funk', 'Boom Bap',
+                       'Bossa', 'One Drop', 'Punk', 'Blast', 'Sludge', 'Trap', 'Two-Step', 'Gallop', 'Hats Only',
+                       'Kick Only', 'Fill']
+DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty']
+DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_params); the kernel reads words 5..11 and 13
+    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Pattern', 'Pattern', LIST, dict(enumerate(DRUMCHAPEL_PATTERNS)), 0),
+    (3, 7,  'HD2_FM4SynthOMatic', 'Wave', 'Kit', 'Kit', LIST, dict(enumerate(DRUMCHAPEL_KITS)), 0),
+    (4, 8,  'HD2_AmpLine6Clarity', 'Bass', 'Kick', 'Kick', 'percent', (0.0, 1.0), 0.8),
+    (5, 9,  'HD2_AmpLine6Clarity', 'Mid', 'Snare', 'Snare', 'percent', (0.0, 1.0), 0.7),
+    (6, 10, 'HD2_AmpLine6Clarity', 'Treble', 'Hat', 'Hat', 'percent', (0.0, 1.0), 0.5),
+    (7, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Swing', 'Swing', 'percent', (0.0, 1.0), 0.0),
+    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
+)
+PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
+    (1, 5,  'HD2_FM4SynthOMatic', 'Wave', 'Mode', 'Mode', LIST,
+     {0: 'Repeat', 1: 'Random', 2: 'Reverse', 3: 'Trigger', 4: 'Sq Trigger', 5: 'Square', 6: 'Up', 7: 'Down'}, 0),
+    (2, 6,  'HD2_AmpLine6Clarity', 'Drive', 'Time', 'Time', 'knob', (0.0, 1.0), 0.5),
+    (3, 7,  'HD2_AmpLine6Clarity', 'Bass', 'Func', 'Func', 'knob', (0.0, 1.0), 0.5),
+    (4, 8,  'HD2_AmpLine6Clarity', 'Mid', 'Sens', 'Sens', 'knob', (0.0, 1.0), 0.5),
+    (5, 9,  'HD2_AmpLine6Clarity', 'Treble', 'Tone', 'Tone', 'knob', (0.0, 1.0), 0.8),
+    (6, 10, 'HD2_AmpLine6Clarity', 'Presence', 'Dry', 'Dry', 'percent', (0.0, 1.0), 1.0),
+    (7, 11, 'HD2_AmpLine6Clarity', 'Sag', 'Mix', 'Mix', 'percent', (0.0, 1.0), 1.0),
+    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 1.0),
 )
 # the Block 3 kernels after NAM, in packing order: model, name, display, Entry 0 cost, primitive, knobs, entry symbol
 EFFECTS = {
@@ -151,15 +208,35 @@ EFFECTS = {
                     params=OTTOBIT_PARAMS, entry='OVL_ENTRY_OTTOBIT'),   # measured mean 2,450 cycles of ~150,000
     'syntax': dict(takeover='HD2_DistPocketFuzzMono', name='HD2_DistSyntax', display='Syntax', cost=1200, prim=0x238F,
                    params=SYNTAX_PARAMS, entry='OVL_ENTRY_SYNTAX'),   # measured worst 5,670
-    # resident, not an overlay: it is meant to run beside Ottobit, and a swap costs ~28,000 cycles
+    # an overlay since 2026-11-17 (it was resident, to run beside Ottobit without a swap; the five new overlays needed its room)
     'doomchug': dict(takeover='HD2_DistPocketFuzzMono', name='HD2_DistDoomChug', display='Doom Chug', cost=500, prim=0x238F,
-                     params=DOOMCHUG_PARAMS, entry='DOOMCHUG_ENTRY'),
+                     params=DOOMCHUG_PARAMS, entry='OVL_ENTRY_DOOMCHUG'),
+    # the new overlays (2026-11-17), each on a host the user chose, mono version only
+    'bethblahem': dict(takeover='HD2_PitchTwinHarmonyMono', name='HD2_PitchBethblahem', display='Bethblahem', cost=700, prim=0x0833,
+                       params=BETHBLAHEM_PARAMS, entry='OVL_ENTRY_BETHBLAHEM'),   # measured worst 3,535 cycles in ssim
+    'puggy': dict(takeover='HD2_DelaySweepEchoMono', name='HD2_DelayPuggyPuncher', display='Puggy Puncher', cost=700, prim=0x045E,
+                  params=PUGGY_PARAMS, entry='OVL_ENTRY_PUGGY', sync=True),   # tempo-synced like Click; worst 2,627 cycles in ssim
+    'greasy': dict(takeover='VIC_PitchBoctaverMono', name='HD2_PitchGreasyStrangler', display='Greasy Strangler', short='Greasy Strangler',
+                   cost=700, prim=0x2AB6, params=GREASY_PARAMS, entry='OVL_ENTRY_GREASY'),   # worst 2,788 cycles in ssim
+    'drumchapel': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayDrumChapel', display='Drum Chapel', cost=700, prim=0x23AC,
+                       params=DRUMCHAPEL_PARAMS, entry='OVL_ENTRY_DRUMCHAPEL', sync=True,
+                       # Ratchet is 'followEnable' (the unit keeps the block running and hands it the on/off state):
+                       # without these the footswitch bypasses Drum Chapel like any other delay (2026-11-18)
+                       meta_drop=('followEnable', 'loadBypassed'), meta_type='digital'),   # Click's timing; worst 5,345 cycles in ssim
+    'purewhitey': dict(takeover='HD2_DistTycoctaviaFuzzMono', name='HD2_DistPureWhitey', display='Pure Whitey', cost=700, prim=0x2AAC,
+                       params=PUREWHITEY_PARAMS, entry='OVL_ENTRY_PUREWHITEY'),   # worst 2,547 cycles in ssim; ring in DDR2
     # --probe: a diagnostic on Geiger's host instead of Geiger (effects/probe/sharc/probe_kernel.asm)
     'probe': dict(takeover=GEIGER_TAKEOVER, name='HD2_DistProbe', display='Probe', cost=300, prim=GEIGER_PRIM,
                   params=GEIGER_PARAMS, entry='PROBE_ENTRY'),
 }
 BLOB0_WORDS_5 = 0x7B000                # five host graphs
-BLOB0_WORDS_OVL = 0x7E000              # six host graphs and the overlay payload
+BLOB0_WORDS_OVL = 0x7E000              # six host graphs and the overlay payload (Ottobit alone)
+# The overlays (one shared internal region, swapped in by ovl_stub_kernel); those with a DDR2 ring take RING_N x NSLOTS words
+# each, above NAM's slots, in this order. With more overlays than Ottobit, Blob 0's buffer takes all the DDR2 left below
+# DDR2_LIMIT (the old Heap 6 end, under the User IR store at 0x2a912c) after NAM's slots and the rings.
+OVERLAYS = ('ottobit', 'syntax', 'doomchug', 'purewhitey', 'greasy', 'drumchapel', 'bethblahem', 'puggy')
+RING_OVERLAYS = ('ottobit', 'purewhitey')
+DDR2_LIMIT = 0x2A8DF6
 GEIGER_CURVES_WORDS = 16 * 65
 NAM_FAR_D_EXTRA = 17                   # NAM's layout when the extra kernels are in
 
@@ -223,6 +300,67 @@ def append_blob0(e4, words):   # (unused: words past the last structure froze th
     w4 = w4[:end] + list(words) + w4[end:]
     w4[5] = len(w4)
     return struct.pack('<%dI' % len(w4), *w4), b0_len
+
+
+def compact_blob0(pa, e4, stock_len):
+    """Entry 4 with Blob 0's dead composite tables removed. patch_amp.clone_composite_in_blob0 appends, per added host
+    graph, a whole new copy of the composite table (~3,150 words) before the new composite, and the old copy stays
+    behind unused; with a dozen added graphs that is most of the DDR2 the overlays need. This keeps Blob 0's stock part
+    (up to stock_len) as it is and rewrites everything after it as one table (the live one) followed by every added
+    composite, each relocated as clone_composite_in_blob0 relocates it. The blobs after Blob 0 move with its new length."""
+    w4 = list(struct.unpack('<%dI' % (len(e4) // 4), e4))
+    nblobs, d = w4[2], w4[3]
+    pairs = [(w4[d + 2 * k], w4[d + 2 * k + 1]) for k in range(nblobs)]
+    b0 = list(w4[pairs[0][1]: pairs[0][1] + pairs[0][0]])
+    n, ctab = b0[0xf], b0[0x10]
+    tab = b0[ctab: ctab + 7 * n]
+    added = [i for i in range(n) if tab[7 * i + 3] >= stock_len]
+    assert added and all(tab[7 * i + 3] < stock_len for i in range(n) if i not in added)
+    new = b0[:stock_len]
+    new_ctab = len(new)
+    new += [0] * (7 * n)
+    for i in added:
+        h = tab[7 * i: 7 * i + 7]
+        start, end = h[3], h[5] + 4 * h[4]
+        sl = b0[start:end]
+        delta = len(new) - start
+        for m in range(h[2]):
+            rb = 20 * m
+            c_rel = sl[rb + 2] - start
+            for j in range(sl[rb + 1] >> 1):
+                if start <= sl[c_rel + 3 * j + 1] <= end:
+                    sl[c_rel + 3 * j + 1] += delta
+            for col in (2, 8, 10, 12):
+                if start <= sl[rb + col] <= end:
+                    sl[rb + col] += delta
+        tab[7 * i + 3] = h[3] + delta
+        tab[7 * i + 5] = h[5] + delta
+        new += sl
+    new[new_ctab: new_ctab + 7 * n] = tab
+    new[0x10] = new_ctab
+    err = pa.sharc_blob0_check(new, pa.DEV.BLOB0_MAX_WORDS)
+    assert err is None, err
+    rest = [list(w4[off: off + ln]) for ln, off in pairs[1:]]
+    order = sorted(range(nblobs), key=lambda k: pairs[k][1])
+    assert order[0] != 0 and pairs[0][1] == d + 2 * nblobs, 'Blob 0 is not right after the directory'
+    head = w4[:d]
+    cur = d + 2 * nblobs
+    newpairs = [None] * nblobs
+    body = []
+    for k in order:
+        words = new if k == 0 else rest[k - 1]
+        if pairs[k][1] < d:                              # a stock blob before the directory: unchanged
+            newpairs[k] = pairs[k]
+            continue
+        newpairs[k] = (len(words), cur)
+        body += words
+        cur += len(words)
+    out = head + [x for pr in newpairs for x in pr] + body
+    out[4] = newpairs[0][1]
+    out[5] = len(out)
+    print(f'[+] Entry 4: Blob 0 compacted from {len(b0):#x} to {len(new):#x} words ({len(added)} added composites, '
+          f'one table)')
+    return struct.pack('<%dI' % len(out), *out)
 
 
 def b3_normal(a48):
@@ -302,7 +440,28 @@ def knob_params(pa, e3, info, spec):
 from nam_host import NAM_HOSTS, NAM_LIST_SLOTS, nam_off_ir  # noqa: E402,F401  (shared with build_nam_click.py)
 
 
-DEFAULT_EXTRAS = ('commander', 'corrupt', 'ottobit', 'doomchug')   # what a plain build_all.py builds
+def sync_knob_params(pa, e3, info, spec):
+    """An effect on a tempo-synced delay host, as Click: slot 1 is Time with the delay's tempo-sync pair (its
+    SyncSelect1 and TempoSync1, copied from Mod/Chorus Echo as build_click.py does, appended after the knobs), and
+    build_click.click_host_blob computes the beat length in seconds into word 5. `spec` holds the other knobs, slots 2..n,
+    in knob_params' form; slot 1 in it, if present, is ignored (Time is the delay's own)."""
+    knobs = [t for t in spec if t[0] != 1]
+    n = len(knobs) + 1
+    sel, syn = n + 1, n + 2
+    saved = bc.SYNC_PARAMS, bc.CLICK_PARAMS
+    bc.SYNC_PARAMS = ((1, 'Time', 'time', (0.1, 4.0, 0.5), {'coupledIndex': str(sel), 'toggleSelectIndex': str(syn)}),
+                      (sel, 'SyncSelect1', 'select', (1, 19, 6), {'coupledIndex': '1', 'toggleSelectIndex': str(syn)}),
+                      (syn, 'TempoSync1', 'sync', (0, 0, 1), {}))
+    bc.CLICK_PARAMS = tuple(knobs)
+    try:
+        out = bc.click_params(pa, e3, info)
+    finally:
+        bc.SYNC_PARAMS, bc.CLICK_PARAMS = saved
+    assert [p['slot'] for p in out] == list(range(1, syn + 1)) and out[0]['role'] == 'time'
+    return out
+
+
+DEFAULT_EXTRAS = ('commander', 'corrupt', 'ottobit', 'doomchug', 'purewhitey', 'greasy', 'drumchapel', 'bethblahem', 'puggy')   # what a plain build_all.py builds
 
 
 def main():
@@ -313,19 +472,19 @@ def main():
     with_arg = argv[argv.index('--with') + 1] if '--with' in argv else None
     extras = [] if with_arg == 'none' or (probe and with_arg is None) else \
         with_arg.split(',') if with_arg else list(DEFAULT_EXTRAS)
-    if extras not in ([], ['commander'], ['commander', 'corrupt'], ['commander', 'corrupt', 'ottobit'],
-                      ['commander', 'corrupt', 'ottobit', 'syntax'], ['commander', 'corrupt', 'ottobit', 'doomchug']):
-        sys.exit('build_all.py: --with takes none, commander, commander,corrupt, commander,corrupt,ottobit, commander,corrupt,ottobit,syntax or commander,corrupt,ottobit,doomchug')
-    overlays = [k for k in extras if k in ('ottobit', 'syntax')]         # sharing one internal region
+    known = [k for k in EFFECTS if k not in ('geiger', 'probe')]
+    if any(k not in known for k in extras) or len(set(extras)) != len(extras) or ('corrupt' in extras and 'commander' not in extras) \
+            or sum(EFFECTS[k]['takeover'] == t for k in extras for t in {EFFECTS[x]['takeover'] for x in extras}) != len(extras):
+        sys.exit('build_all.py: --with takes none or a list of ' + ', '.join(known) + ' (corrupt needs commander; one effect per host)')
+    extras = [k for k in known if k in extras]           # the order the kernels and models are built in
+    overlays = [k for k in extras if k in OVERLAYS]      # sharing one internal region
     overlay = bool(overlays)
     if probe and extras:
         sys.exit('build_all.py: --probe goes alone')
     first = 'probe' if probe else 'geiger'
     fx = [first] + extras                                # the models after NAM and Click
     # the Block 3 kernels after NAM, in packing order: Commander and Corrupt together share one kernel
-    blocks = [first] + (['commander_corrupt'] if 'corrupt' in extras else extras[:1])
-    if 'doomchug' in extras:
-        blocks += ['doomchug']
+    blocks = [first] + (['commander_corrupt'] if 'corrupt' in extras else [k for k in extras[:1] if k not in OVERLAYS])
     if overlay:
         blocks += ['ovl_stub']                           # the overlays' shared region, then their resident stub
     entries_of = {k: [k] for k in blocks}
@@ -350,19 +509,27 @@ def main():
     nam_asm = os.path.join(build, 'nam_lite_2slots.asm' if not extras else f'nam_lite_2slots_fd{NAM_FAR_D_EXTRA}.asm')
     image = os.path.join(build, f'all{suffix.lower()}.l6ia')
     manifest_path = os.path.join(build, f'all{suffix.lower()}_manifest.json')
-    blob0_words = BLOB0_WORDS_OVL if overlay else BLOB0_WORDS_5 if extras else bnc.BLOB0_WORDS_ALL
+    OVL_MODS = {k: __import__(f'{k}_kernel') for k in overlays}
+    ring_words = sum(OVL_MODS[k].RING_N * OVL_MODS[k].NSLOTS for k in overlays if k in RING_OVERLAYS)
+    if overlays and overlays != ['ottobit'] and overlays != ['ottobit', 'syntax']:
+        blob0_words = (DDR2_LIMIT - ring_words - NAM_SLOTS * 0x5000 - bnc.BLOB0_BASE) & ~0xFFF
+    else:
+        blob0_words = BLOB0_WORDS_OVL if overlay else BLOB0_WORDS_5 if extras else bnc.BLOB0_WORDS_ALL
     sdr_base = bnc.BLOB0_BASE + blob0_words            # NAM's DDR2 slots just above the Blob 0 buffer
     env = dict(os.environ, NAM_DEVICE='effects', NAM_SDR_BASE=hex(sdr_base))
-    ring0 = sdr_base + NAM_SLOTS * 0x5000                # Ottobit's rings, above NAM's slots
+    ring0 = sdr_base + NAM_SLOTS * 0x5000                # the overlays' rings, above NAM's slots
+    rings = {}
     if overlay:
         import geiger_kernel
-        import ottobit_kernel
         import ovl_stub_kernel
-        import syntax_kernel
-        OVL_MODS = {'ottobit': ottobit_kernel, 'syntax': syntax_kernel}
         geiger_kernel.EXT_CURVES = 0x3F0000              # for the check; the real address once Blob 0 is laid out
-        ottobit_kernel.SPEC = ottobit_kernel.make_spec(ring0)
-        assert ring0 + ottobit_kernel.RING_N * ottobit_kernel.NSLOTS <= 0x2A8DF6, 'the rings run past the free DDR2'
+        at = ring0
+        for k in overlays:
+            if k in RING_OVERLAYS:
+                OVL_MODS[k].SPEC = OVL_MODS[k].make_spec(at)
+                rings[k] = at
+                at += OVL_MODS[k].RING_N * OVL_MODS[k].NSLOTS
+        assert at <= DDR2_LIMIT, f'the rings run past the free DDR2 ({at:#x} > {DDR2_LIMIT:#x})'
     check = '--no-check' not in argv
     run = bnc.run
 
@@ -428,14 +595,18 @@ def main():
     params = {'nam': nam_off_ir(pa.nam_params(e3, info)) if nam_host else pa.nam_params(e3, info), 'click': bc.click_params(pa, e3, info)}
     for k in fx:
         targets[k] = pa.find_model(info, EFFECTS[k]['takeover'])
-        params[k] = knob_params(pa, e3, info, EFFECTS[k]['params'])
+        params[k] = (sync_knob_params if EFFECTS[k].get('sync') else knob_params)(pa, e3, info, EFFECTS[k]['params'])
 
     # 2. Entry 4: the host graphs (copies of the 2048 IR block's), each on its own primitive
+    w4s = struct.unpack('<%dI' % (len(e4) // 4), e4)
+    stock_b0_len = w4s[w4s[3]]
     e4n, b_n, c_n = pa.add_model_entry4(e4, clone['blob_index'], params['nam'], 0, prim_id=NAM_PRIM)
     e4n, b_c, c_c = pa.add_model_entry4(e4n, clone['blob_index'], params['click'], 0, blob_fn=bc.click_host_blob, prim_id=CLICK_PRIM)
     blobs, comps = {'nam': b_n, 'click': b_c}, {'nam': c_n, 'click': c_c}
     for k in fx:
         pad = ()
+        if len(overlays) > 2:                  # drop the dead table copies before each new one (compact_blob0)
+            e4n = compact_blob0(pa, e4n, stock_b0_len)
         if overlay and k == fx[-1]:            # inside Blob 0, before the last model's own table copy
             w4 = struct.unpack('<%dI' % (len(e4n) // 4), e4n)
             b0_len = w4[w4[3]]
@@ -456,7 +627,7 @@ def main():
             _, _, p_syms, _, _ = ks['probe'].assemble()
             pad = [0] * (probe_kernel.EXT['tail'] - b0_len) + probe_kernel.tail_words(p_syms)
         e4n, blobs[k], comps[k] = pa.add_model_entry4(e4n, clone['blob_index'], params[k], 0, prim_id=EFFECTS[k]['prim'],
-                                                      b0_pad=pad)
+                                                      b0_pad=pad, **({'blob_fn': bc.click_host_blob} if EFFECTS[k].get('sync') else {}))
     print('[+] Entry 4: ' + ', '.join(f'{k} blob {blobs[k]} on {comps[k]:#x}' for k in blobs))
     if probe:                                            # where the probe's words landed, checked
         w4 = struct.unpack('<%dI' % (len(e4n) // 4), e4n)
@@ -483,7 +654,10 @@ def main():
                                        meta_set={'displayNameShort': bc.SHORT, 'displayParamCount': str(len(params['click']) - 2)})
     ids = {'nam': id_n, 'click': id_c}
     for k in fx:
-        e3n, ids[k], _ = pa.add_model_entry3(e3n, targets[k], EFFECTS[k]['name'], EFFECTS[k]['display'], blobs[k], params[k])
+        e3n, ids[k], _ = pa.add_model_entry3(e3n, targets[k], EFFECTS[k]['name'], EFFECTS[k]['display'], blobs[k], params[k],
+                                             meta_set={**({'displayParamCount': str(len(params[k]) - 2)} if EFFECTS[k].get('sync') else {}),
+                                                       **({'type': EFFECTS[k]['meta_type']} if 'meta_type' in EFFECTS[k] else {})},
+                                             meta_drop=EFFECTS[k].get('meta_drop', ()))
     e3n = bytearray(e3n)
     ms = pa.parse_entry3_full(bytes(e3n))['models']
     for key, new_id in ids.items():
@@ -508,8 +682,9 @@ def main():
                                          n_display=len(params['click']) - 2)
     for k in fx:
         e0n, pid, _, hits = pa.takeover_entry0_effects(e0n, targets[k]['words'][2], EFFECTS[k]['display'],
-                                                       short_name=EFFECTS[k]['display'], dsp_cost=EFFECTS[k]['cost'],
-                                                       n_params=len(params[k]), strip_title=None)
+                                                       short_name=EFFECTS[k].get('short', EFFECTS[k]['display']), dsp_cost=EFFECTS[k]['cost'],
+                                                       n_params=len(params[k]), strip_title=None,
+                                                       n_display=len(params[k]) - 2 if EFFECTS[k].get('sync') else None)
         print(f'[+] Entry 0: {EFFECTS[k]["display"]} preset_id {pid}, browser slots {hits}, dsp_cost {EFFECTS[k]["cost"]}')
     l6ia_bytes, _, _ = l6ia.rebuild_archive(l6ia_bytes, {0: e0n, 2: l6ia.swap32(e2_raw), 3: e3n, 4: e4n})
 
@@ -582,7 +757,8 @@ def main():
     if extras:
         manifest['extras'] = extras
     if overlay:
-        manifest['overlay'] = dict(ovl, meter=meter, ring0=ring0, curves=geiger_kernel.EXT_CURVES, place=list(ovk[overlays[0]].places['b3']), names=overlays)
+        manifest['overlay'] = dict(ovl, meter=meter, ring0=ring0, rings=rings, curves=geiger_kernel.EXT_CURVES,
+                                   place=list(ovk[overlays[0]].places['b3']), names=overlays)
     manifest.update(blob0_words=blob0_words, checked=check)
     json.dump(manifest, open(manifest_path, 'w'), indent=1)
     print(f'[+] manifest {os.path.relpath(manifest_path, HERE)}')

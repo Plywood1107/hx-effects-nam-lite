@@ -10,7 +10,7 @@ static const FxParamDesc PARAMS[Q_NPARAMS] = {
     { "rate",    "Rate",    FX_CONTINUOUS, 0.0f, 1.0f,  0.5f,  "0.05 .. 8 steps/s", "immediate" },
     { "drift",   "Drift",   FX_CONTINUOUS, 0.0f, 1.0f,  0.35f, "", "immediate" },
     { "warble",  "Warble",  FX_CONTINUOUS, 0.0f, 1.0f,  0.5f,  "", "immediate" },
-    { "chug",    "Chug",    FX_CONTINUOUS, 0.0f, 1.0f,  0.4f,  "", "immediate" },
+    { "fuzz",    "Fuzz",    FX_CONTINUOUS, 0.0f, 1.0f,  0.3f,  "drive 1x .. 40x into the clip", "immediate" },
     { "tone",    "Tone",    FX_CONTINUOUS, 0.0f, 1.0f,  0.25f, "", "immediate" },
     { "level",   "Level",   FX_CONTINUOUS, 0.0f, 1.0f,  0.5f,  "x (shown as %)", "immediate" },
 };
@@ -52,7 +52,10 @@ unsigned doomchug_pattern(int p)
 #define K_DRIFT 0.5f                             /* octaves at Drift 1 */
 #define K_WARB  0.16f                            /* octaves at Warble 1, on the triangle 0..0.5 */
 #define K_TREM  1.2f
-#define K_Z     0.6f
+#define K_Z     0.6f                             /* the voice sum's scale into the clip at Fuzz 0 */
+#define K_DRV   23.4f                            /* K_Z x 39: Fuzz 1 drives the sum 40x */
+#define K_COMP  0.45f                            /* Level falls by this much at Fuzz 1, against the louder clip */
+#define K_THUD  0.4f                             /* the thud's depth on each step (was the Chug knob) */
 
 static const float OFFSET[DOOMCHUG_VOICES] = { 0.0f, 0.012f, 0.5833333f, 1.0f };   /* root, sharp root, fifth, octave */
 
@@ -66,7 +69,7 @@ static void reset(void *st, float sr)
 }
 
 /* One control tick: the step, the walks, the LFOs and each voice's pitch and gain ramp. */
-static void control(DoomChugState *s, int key, unsigned pw, float rinc, float dk, float wk, float tk, float chug)
+static void control(DoomChugState *s, int key, unsigned pw, float rinc, float dk, float wk, float tk)
 {
     float sv, cg;
     int v;
@@ -85,7 +88,7 @@ static void control(DoomChugState *s, int key, unsigned pw, float rinc, float dk
         }
     }
     s->env *= K_ENV;
-    cg = 1.0f - chug * (1.0f - s->env);
+    cg = 1.0f - K_THUD * (1.0f - s->env);
     sv = (float)(key + (int)((pw >> (4 * s->step)) & 15u)) * K_1_12;
 
     for (v = 0; v < DOOMCHUG_VOICES; v++) {
@@ -112,9 +115,11 @@ static void process(void *st, const FxParams *p, const float *in, float *out, si
     float dk = fx_param_clamp(&d[Q_DRIFT], p->value[Q_DRIFT]) * K_DRIFT;
     float warble = fx_param_clamp(&d[Q_WARBLE], p->value[Q_WARBLE]);
     float wk = warble * K_WARB, tk = warble * K_TREM;
-    float chug = fx_param_clamp(&d[Q_CHUG], p->value[Q_CHUG]);
+    float fuzz = fx_param_clamp(&d[Q_FUZZ], p->value[Q_FUZZ]);
     float tone = fx_param_clamp(&d[Q_TONE], p->value[Q_TONE]);
     float level = fx_param_clamp(&d[Q_LEVEL], p->value[Q_LEVEL]);
+    float drive = fuzz * fuzz * K_DRV + K_Z;
+    level = level * (1.0f - K_COMP * fuzz);
     size_t i;
     int v;
 
@@ -122,7 +127,7 @@ static void process(void *st, const FxParams *p, const float *in, float *out, si
     for (i = 0; i < n; i++) {
         float x = in[i], z = 0.0f;
         if (!isfinite(x)) x = 0.0f;
-        if (s->cnt == 0) control(s, key, pw, rinc, dk, wk, tk, chug);
+        if (s->cnt == 0) control(s, key, pw, rinc, dk, wk, tk);
         s->cnt = (s->cnt + 1) & 15;
 
         for (v = 0; v < DOOMCHUG_VOICES; v++) {
@@ -131,7 +136,7 @@ static void process(void *st, const FxParams *p, const float *in, float *out, si
             s->g[v] += s->dg[v];
             z += (s->ph[v] - 0.5f) * s->g[v];
         }
-        z *= K_Z;
+        z *= drive;
         if (z > 1.0f) z = 1.0f;
         if (z < -1.0f) z = -1.0f;
         z = 1.5f * z - 0.5f * z * z * z;

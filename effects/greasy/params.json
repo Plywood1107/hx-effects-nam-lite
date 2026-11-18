@@ -1,0 +1,14 @@
+{
+  "id": "greasy",
+  "display_name": "Greasy Strangler",
+  "parameters": [
+    {"id": "octave", "display": "Octave", "type": "integer", "min": 0, "max": 3, "default": 1, "unit": "0 -2 oct, 1 -1 oct, 2 unison, 3 +1 oct", "smoothing": "immediate"},
+    {"id": "glide", "display": "Glide", "type": "continuous", "min": 0, "max": 1, "default": 0.3, "unit": "instant .. about 1 s", "smoothing": "immediate"},
+    {"id": "drift", "display": "Drift", "type": "continuous", "min": 0, "max": 1, "default": 0.25, "unit": "", "smoothing": "immediate"},
+    {"id": "warble", "display": "Warble", "type": "continuous", "min": 0, "max": 1, "default": 0.35, "unit": "", "smoothing": "immediate"},
+    {"id": "fuzz", "display": "Fuzz", "type": "continuous", "min": 0, "max": 1, "default": 0.3, "unit": "drive 1x .. 40x into the clip", "smoothing": "immediate"},
+    {"id": "tone", "display": "Tone", "type": "continuous", "min": 0, "max": 1, "default": 0.35, "unit": "", "smoothing": "immediate"},
+    {"id": "dry", "display": "Dry", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "x (shown as %)", "smoothing": "immediate"}
+  ]
+}

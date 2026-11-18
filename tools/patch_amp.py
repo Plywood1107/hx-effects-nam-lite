@@ -1408,7 +1408,7 @@ def add_model_entry4(e4, src_blob_index, nam, sdram_words=0, blob_fn=None, prim_
     return out, new_blob_idx, new_comp_id
 
 
-def add_model_entry3(e3, src, new_name, display_name, blob_index, nam, meta_set=None):
+def add_model_entry3(e3, src, new_name, display_name, blob_index, nam, meta_set=None, meta_drop=()):
     """Entry 3 with one more model: a copy of `src` (a parse_entry3_full model)
     under a new internal name and displayName, with the next model ID and the
     parameters `nam` (nam_params).
@@ -1482,6 +1482,11 @@ def add_model_entry3(e3, src, new_name, display_name, blob_index, nam, meta_set=
                 struct.pack_into('<3I', meta, 12 * k, ks, kt, string(val))
                 hit = True
         assert hit, f'{src["name"]} has no metadata field {key}'
+    for key in meta_drop:                               # metadata fields the new model must not have
+        keep = [bytes(meta[12 * k: 12 * k + 12]) for k in range(d[0])
+                if struct.unpack_from('<I', meta, 12 * k)[0] != names.get(key)]
+        assert len(keep) == d[0] - 1, f'{src["name"]} has no metadata field {key}'
+        meta, d[0] = bytearray(b''.join(keep)), len(keep)
 
     # one state per parameter map input node (nam_host_blob: node k for nam[k])
     m_states = b''.join(struct.pack('<5I', 0, 0x80b98, string(p['state']), p['type'], k)

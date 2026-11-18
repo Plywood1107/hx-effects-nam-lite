@@ -352,7 +352,7 @@ def layout(members, base):
         src_data = base + len(words)
         words += dwords
         ms.append(dict(name=name, src_code=src_code, n_code=len(code), src_data=src_data, n_data=len(dwords),
-                       slots_off=syms['SLOTS'] - data0, kernel=syms[entry], pattern_word=spec.knobs['pattern']))
+                       slots_off=syms['SLOTS'] - data0, kernel=syms[entry], pattern_word=spec.knobs.get('pattern', 6)))   # (only --meter reads it)
     return words, dict(code_n=normal_of(code48), data0=data0, members=ms)
 
 

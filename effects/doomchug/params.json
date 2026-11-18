@@ -7,7 +7,7 @@
     {"id": "rate", "display": "Rate", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "0.05 .. 8 steps/s", "smoothing": "immediate"},
     {"id": "drift", "display": "Drift", "type": "continuous", "min": 0, "max": 1, "default": 0.35, "unit": "", "smoothing": "immediate"},
     {"id": "warble", "display": "Warble", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "", "smoothing": "immediate"},
-    {"id": "chug", "display": "Chug", "type": "continuous", "min": 0, "max": 1, "default": 0.4, "unit": "", "smoothing": "immediate"},
+    {"id": "fuzz", "display": "Fuzz", "type": "continuous", "min": 0, "max": 1, "default": 0.3, "unit": "drive 1x .. 40x into the clip", "smoothing": "immediate"},
     {"id": "tone", "display": "Tone", "type": "continuous", "min": 0, "max": 1, "default": 0.25, "unit": "", "smoothing": "immediate"},
     {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "x (shown as %)", "smoothing": "immediate"}
   ]

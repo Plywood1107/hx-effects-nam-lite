@@ -260,13 +260,14 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
    with NAM in the startup preset) — done by the user (2026‑11‑17).
 6. ~~NAM's footswitch bypass~~ — checked by the user, works (2026‑11‑17).
 7. ~~Model knob reaches only User IR slots 1..21~~ — fine as it is (user, 2026‑11‑17); don't pursue.
-8. **Doom Chug's Chug knob → Fuzz** (user wants it, 2026‑11‑17; to do). Today Chug scales the voices' gain by a
-   thud envelope (`cg = 1 - chug*(1 - env)`, env decaying in ~0.2 s from each pattern step), so at low Rate it
-   mostly lowers the level. Proposal: make the knob a drive (gain up to ~30x on the voice sum, then a soft clip,
-   level-compensated, before Tone), keeping the thud at a fixed modest depth, or as the old shelved idea had it,
-   Fuzz on the knob plus the thud elsewhere. Doom Chug is resident in Block 3 with only ~20‑30 words spare, so the
-   clip must be a few instructions (reuse the shared clamp; a cubic soft clip is ~5). C ref + tests + bit-exact
-   kernel as usual, then rebuild the full image (its MD5 changes) and ask before flashing.
+8. ~~**Doom Chug's Chug knob → Fuzz**~~ — done 2026‑11‑17, works on the unit (user: "it works"; log clean). The
+   knob (sixth, word 10) is now Fuzz, default 0.3: drive = 0.6 + 23.4 Fuzz² on the voice sum into the existing
+   clip (1x .. 40x), Level x (1 − 0.45 Fuzz); the thud stays at a fixed 0.4 (K_THUD). C ref + tests
+   (effects/doomchug), kernel bit-exact in ssim (390,400 samples). To fit between NAM and Click the kernel's six
+   4-instruction pointer steps became `MODIFY(I4, VSIZE)` / `I4 = MODIFY(I3, ST_V0)`: 350 instructions (was 368
+   after the change; smaller than before it), worst 2,466 cycles a call. Full + preamps image with it:
+   e549c1579fb5830a56b71d38ff2b722c (build_all.py --no-check, then build_amps --preamps all); base full image
+   132df9c738fcded23204d5a70803f9db.
 9. ~~More overlay effects (Stutter, Grains, Sequence, Warp)~~ — not doing (user, 2026‑11‑17). Stutter's code
    lives on as the base for item 12.
 10. **User IR upload without HX Edit** (user asked 2026‑11‑13; later, user 2026‑11‑17). A `tools/ir_upload.py` that writes `.wav`
@@ -281,7 +282,7 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
     runs the network in numpy (float64), checked against nam_a2.asm in ssim to 1.3e‑6 on a high-gain capture; ssim
     itself is too slow (over 50 M instructions for 0.5 s). A set of 19 user captures measured −29.1 .. −11.0 dB
     before matching. Only the output-scale word changes; the rest of the stream is identical.
-12. **Mandala-style glitch block** (user wants it, 2026‑11‑17; to do, nothing built). Modelled on the Bananana Effects
+12. **Pure Whitey** (the user's name, was "Mandala-style glitch block"; user wants it, 2026‑11‑17; to do, nothing built; 11 characters). Modelled on the Bananana Effects
     Mandala, a mini short-time sampler: modes Repeat, Random, Reverse, Trigger, Square Trigger, Square, Up, Down;
     Time (repeat length, random at full), Func (speed x1/x2, reverse x½/x1/x2, octave-down mix in the Square modes),
     latch/momentary (use the unit's own momentary footswitch setting), Kill Dry. No circuit to copy: built from the
@@ -300,7 +301,7 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
     code). Needs a stock block to replace (ask) and a check that "Greasy Strangler" (16 characters) fits the
     browser name and the footswitch scribble strip, or a short form for the strip. C ref + tests + bit-exact
     kernel, then a test image from `build.py full`; ask before flashing.
-14. **Beat It Rocket** (the user's name, was "Drums"; user wants it, 2026‑11‑17; to do, nothing built; 14 characters). A basic drum-machine block built on Click's timing
+14. **Drum Chapel** (the user's name; was "Drums", then "Beat It Rocket"; user wants it, 2026‑11‑17; to do, nothing built; 11 characters). A basic drum-machine block built on Click's timing
     (exact rational accumulator, tap tempo via the host delay's Time, bar and 16th-note counting): synthesised kick
     (sine with fast pitch drop + decay, Click's Rotor), snare (filtered noise burst + short tone), hi-hat (short
     high-passed noise; xorshift noise as in Doom Chug). Patterns as 16-step bit grids per voice (as Doom Chug's
@@ -324,7 +325,7 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
       sharply after ~150 ms: no buffer). Expect "80s drum machine", not samples.
     Labels on the unit stay generic (no product names). Extra code over the plain version: the six-oscillator hat,
     the per-kit drive and the sample-rate hold for Bit; the rest is table data. Separate block, Click
-    unchanged: Click is resident with no room in the full build, so Beat It Rocket runs as an overlay like Ottobit. Host
+    unchanged: Click is resident with no room in the full build, so Drum Chapel runs as an overlay like Ottobit. Host
     must be a tempo-sync delay (ask which), copying Click's sync map nodes 0x2a/0x54. Unknown: whether enabling the
     block restarts it at beat 1 (metronome.h notes the same open question); test on the unit. C ref + tests +
     bit-exact kernel, then a test image from `build.py full`; ask before flashing.
@@ -346,9 +347,9 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
     choosing which treatments can come up, Hold (repeat the last roll for N steps), Mix, Level, and a Seed/pattern
     list so a good run can be repeated. 32-sample crossfades at step edges to avoid clicks. No buffer (unless a
     short "repeat this step" stutter is added later: then a small ring); overlay like Ottobit; host must be a
-    tempo-sync delay (ask which; Beat It Rocket, item 14, needs one too). C ref + tests + bit-exact kernel, test image from
+    tempo-sync delay (ask which; Drum Chapel, item 14, needs one too). C ref + tests + bit-exact kernel, test image from
     `build.py full`; ask before flashing.
-17. **Reclaim memory** (user wants it, 2026‑11‑17; to do; worth doing before items 12–16). Goal: room for one or
+17. ~~**Reclaim memory**~~ — skipped (user, 2026‑11‑17): Entry 2 has 2,096 bytes free and Block 3 a few dozen words, so a resident ~400-instruction effect (~2.5 KB of Entry 2 + ~600 Block 3 words) would need a big restructure; items 12–16 are built as overlays like Ottobit instead (two overlays in one preset cost ~28,000 cycles a swap). The MODIFY trick finds only ~3 instructions in the resident kernels (Commander/Corrupt). Original notes: Goal: room for one or
     more of the new effects to be resident instead of overlays, so two of them in one preset don't pay the
     ~28,000-cycle swap (~19 % DSP) each call. Limits today: Block 3 has ~20‑30 words spare (cursor 0xe7c10 vs
     0xe7c2f) and Entry 2's 512 KiB partition ~2 KB. Candidates: build Geiger's curve tables (1,040 words, now in
@@ -359,6 +360,66 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
     bit-exact in ssim and the images' behaviour unchanged (rebuild and compare against the known MD5s where the
     bytes should not move). Hidden-model scan done 2026‑11‑17: no hidden effects beyond amps, preamps, cabs,
     harness/mic internals and sub-parts, so new sounds all need our own code.
+18. ~~**Master volume**~~ — dropped by the user (2026‑11‑17) after the findings below; don't pursue unless asked. (It worked in a test image; a Global Settings item was planned.) The HX Effects has
+    the Stomp's App-model parameter `masterVolume` (HelixFx_App slot 46, 0..1, default 1.0), reached as **global
+    parameter 157 (0x9d)**: its live record is at 0x2819eed8 (table 0x2819eda4, 44-byte records for global ids
+    150..164; only 157 is used; record: model 0x1023, type 3, value at +8, slot 0x2e at +0x1c, default at +0x28).
+    Setter 0x280e98d4(?, id, &{type byte, value}), getter 0x280e98b8. Three writers force it, so changing the
+    Entry 3 / Entry 4 defaults alone does nothing (tested at 0.5 and 0.1: no change):
+    - 0x280a6914, the HX Effects' start-up routine: 157 = 0.0 at 0x280a693c (start-up mute), then 157 = 1.0 at
+      0x280a6ae8 (`mov.w r3, #0x3f800000`) when start-up is done;
+    - 0x280c744c, applying the saved global DSP settings: walks ids 150..165 and gives 157 a fixed 1.0
+      (`mov.w sb, #0x3f800000` at 0x280c7460) instead of the saved value; so the value IS in the saved settings.
+    `tools/mastervol_test.py BASE VALUE --force` changes both constants and both defaults (VALUE must be an ARM
+    immediate: 0.125, 0.25, 0.5 ...). Image 64b6d1efaedf602aca60ea35df154aa9 (full + preamps, 0.125): flashed,
+    boots, no fault, live value 0.125 over the memory window; user: "Much quieter". So masterVolume reaches the
+    DSP's output. Taper (linear or curved) not measured. Next: choose the control (a Global Settings item that is
+    saved and restored, an expression pedal, a fixed per-build level, or a knob/footswitch combination); for a
+    saved setting, the two forced writes become "use the saved value" and something must set it.
+    Planned before it was dropped (an offline study, nothing built): Global Settings UI = ./src/app/fsGlobalsView.c;
+    pages 0x280a3ee8 (rows 0x280a3f00, 3 knobs a row), item lists per page (Ins/Outs 0x280a3c30 = 2,3,4 | 5,0,0),
+    item records: ids 0x280a3b9c, labels 0x280a3c60, ring max/min 0x280a3da4 / 0x280a3e34; hidden item 1 "Input /
+    Pad" could become "Master / Vol" on Ins/Outs row 2; the value formatter 0x280a7544 handles ids <= 0x87 only;
+    the setter skips the save flag for 157 (0x280e94c0); boot: 0x280a67b0 -> 0x280c744c (forced 1.0) -> 0x280a6914.
+
+**Hosts chosen by the user (2026‑11‑17)** for items 12–16, all built as overlays (item 17 skipped), each taking
+over the MONO version only: Pure Whitey → Tycoctavia Fuzz (Distortion), Greasy Strangler → Boctaver (Pitch/Synth),
+Bethblahem → Twin Harmony (Pitch/Synth), Drum Chapel → Ratchet (Delay, tempo sync), Puggy Puncher → Sweep Echo
+(Delay, tempo sync). Overlays share one Block 3 region sized by the largest member, so keep each new kernel no
+bigger than Ottobit's (code 660, data 316 words); Pure Whitey's ring must fit the DDR2 left above NAM's slots.
+
+## Five new overlay effects (2026‑11‑17; all five play on the unit, 2026‑11‑18)
+
+`python3 build_all.py` now builds NAM, Click, Geiger, Commander, Corrupt and seven overlays: Ottobit, Doom Chug (an
+overlay since this change, to free Block 3 for the stub) and the five below. Each has a C reference + tests and a
+SHARC kernel checked bit for bit in ssim (effects/<dir>, `make -C effects test`, `<dir>/sharc/<dir>_kernel.py --check`).
+
+| Effect | Dir | Host (mono) | Primitive | Code / data / worst cycles | Notes |
+|---|---|---|---|---|---|
+| Pure Whitey | purewhitey | Tycoctavia Fuzz | 0x2aac | 421 / 151 / 2,547 | Mandala-style sampler, 8 modes; 1 slot; 4,096-word ring (16-bit pairs at 24 kHz = 0.34 s) in DDR2 |
+| Greasy Strangler | greasy | Boctaver | 0x2ab6 | 398 / 128 / 2,788 | Corrupt's tracker + Doom Chug's drone; holds the last note |
+| Drum Chapel | drumchapel | Ratchet (tempo sync) | 0x23ac | 409 / 296 / 5,345 | Click's timing; 20 patterns, 6 kits (Boom, Punch, Tick, Bit, Doom, Eighty) |
+| Bethblahem | bethblahem | Twin Harmony | 0x0833 | 399 / 80 / 3,535 | low theremin, Octave 0..-4, Growl, Sub; 6 Hz high-pass + limiter |
+| Puggy Puncher | puggy | Sweep Echo (tempo sync) | 0x045e | 377 / 133 / 2,627 | slot-machine glitch per step; Seed repeats a bar |
+
+Build changes (build_all.py): `--with` takes any set (corrupt needs commander, one effect per host); OVERLAYS lists
+the overlay effects, RING_OVERLAYS those with a DDR2 ring (rings above NAM's slots, in order); with more overlays
+than Ottobit the Blob 0 buffer takes all DDR2 left below DDR2_LIMIT (0x2a8df6). `sync_knob_params` gives an effect on
+a tempo-synced delay Click's Time + SyncSelect1/TempoSync1 (slots 1, n+1, n+2) and build_click.click_host_blob.
+`compact_blob0` removes the dead composite-table copies that patch_amp.clone_composite_in_blob0 leaves behind
+(~3,150 words per added host graph; ~28,600 words with this set); it runs before each added graph when there are
+more than two overlays, so older builds are byte-identical. New primitives were picked as ids in the Entry 2
+primitive table that appear nowhere in stock Blob 0 (the proven ones pass the same test); 0x0104, 0x0105, 0x012c,
+0x012d, 0x0130, 0x0205.. remain. verify_all.py takes the category from the host, the sync knobs, and the rings.
+Risks on the unit: the compacted Blob 0 layout (passes sharc_blob0_check) and seven overlays swapping in one stub.
+
+On the unit (2026‑11‑18): all five play; the compacted Blob 0 and seven overlays in one stub boot and run. The one
+fault was that **Drum Chapel ignored its footswitch**: Ratchet's metadata says `followEnable` and `loadBypassed`
+(type `special`), as the stock generators (3 Note Generator, 4 OSC Generator) and Stutter Edit/Poly Sustain have: the
+unit keeps such a block running and hands the DSP its on/off state, so a drum generator kept playing. Drum Chapel's
+model now drops both fields and is type `digital` (EFFECTS `meta_drop`/`meta_type`, patch_amp.add_model_entry3
+`meta_drop`; verify_all checks it). Only Entry 3 changed (image 15fd1c5d…, full + preamps); flashed and booted,
+footswitch not yet re-tested. No other host has those fields. **Check any future host's metadata for them.**
 
 ## Don'ts
 

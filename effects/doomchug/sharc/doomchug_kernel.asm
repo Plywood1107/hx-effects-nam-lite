@@ -8,7 +8,7 @@
 // claimed slots. Each voice's state: VSIZE words from ST_V0, fields V_*.
 //
 // Knob words: DM(5) Key (int 0..11), DM(6) Pattern (int 0..8), DM(7) Rate 0..1, DM(8) Drift 0..1,
-//             DM(9) Warble 0..1, DM(10) Chug 0..1, DM(11) Tone 0..1, DM(13) Level 0..1.
+//             DM(9) Warble 0..1, DM(10) Fuzz 0..1, DM(11) Tone 0..1, DM(13) Level 0..1.
 
 .equ PEYEN,    0x200000
 .equ BDCST9,   0x400000
@@ -120,10 +120,6 @@ c_have:
     F8 = 1.199999999999999955591079;
     F13 = F0 * F8;
 
-    F0 = DM(10, I0);                    // Chug (F14)
-    CALL g_cl;
-    F14 = PASS F0;
-
     F0 = DM(11, I0);                    // Tone 0..1 -> 100 exp(t ln 80) Hz -> tone_a
     CALL g_cl;
     F8 = 4.382026630000000366749191;
@@ -152,10 +148,7 @@ c_have:
     DM(ST_STEP, I3) = R9;
     F9 = 1.0;
     DM(ST_ENV, I3) = F9;
-    R10 = I3;
-    R11 = ST_V0;
-    R10 = R10 + R11;
-    I4 = R10;
+    I4 = MODIFY(I3, ST_V0);
     R9 = DM(ST_RND, I3);
     R11 = 4;
 t_v:
@@ -179,23 +172,21 @@ t_v:
     F15 = 0.000100000000000000004792;
     F10 = F15 + F10;
     DM(V_LI, I4) = F10;
-    R10 = I4;
-    R15 = VSIZE;
-    R10 = R10 + R15;
-    I4 = R10;
+    MODIFY(I4, VSIZE);
     R11 = R11 - 1;
     IF NE JUMP t_v;
     DM(ST_RND, I3) = R9;
 t_keep:
     DM(ST_SPHASE, I3) = F8;
 
-    F8 = DM(ST_ENV, I3);                // the Chug envelope -> cg (F14)
+    F8 = DM(ST_ENV, I3);                // the thud envelope -> cg = 1 - 0.4 (1 - env) (F14)
     F9 = 0.998500000000000054178884;
     F8 = F8 * F9;
     DM(ST_ENV, I3) = F8;
     F9 = 1.0;
     F10 = F9 - F8;
-    F14 = F14 * F10;
+    F11 = 0.4000000059604644775390625;
+    F14 = F11 * F10;
     F14 = F9 - F14;
 
     R9 = DM(ST_STEP, I3);               // Key + this step's semitones, in octaves (F1)
@@ -209,10 +200,7 @@ t_keep:
     F8 = 0.083333335999999993970455;
     F1 = F1 * F8;
 
-    R8 = I3;
-    R9 = ST_V0;
-    R8 = R8 + R9;
-    I4 = R8;
+    I4 = MODIFY(I3, ST_V0);
     F15 = 0.0;
     CALL v_ctl;
     F15 = 0.0120000000000000002498;
@@ -222,18 +210,27 @@ t_keep:
     F15 = 1.0;
     CALL v_ctl;
 
-    F0 = DM(13, I0);                    // Level (F13)
+    F0 = DM(10, I0);                    // Fuzz -> drive 0.6 + 23.4 f^2 (F12), level factor 1 - 0.45 f (F14)
     CALL g_cl;
-    F13 = PASS F0;
+    F8 = F0 * F0;
+    F9 = 23.39999961853027343750;
+    F8 = F8 * F9;
+    F9 = 0.59999999999999997779554;
+    F12 = F8 + F9;
+    F9 = 0.449999988079071044921875;
+    F9 = F9 * F0;
+    F8 = 1.0;
+    F14 = F8 - F9;
+
+    F0 = DM(13, I0);                    // Level x that factor (F13)
+    CALL g_cl;
+    F13 = F0 * F14;
 
     // ---- the samples
     R6 = 16;
 s_loop:
     F7 = DM(I1, 1);                     // x
-    R8 = I3;
-    R9 = ST_V0;
-    R8 = R8 + R9;
-    I4 = R8;
+    I4 = MODIFY(I3, ST_V0);
     F5 = 0.0;                           // z
     R10 = 4;
 s_v:
@@ -254,15 +251,11 @@ s_1:
     F8 = F8 - F11;
     F8 = F8 * F9;
     F5 = F5 + F8;
-    R8 = I4;
-    R9 = VSIZE;
-    R8 = R8 + R9;
-    I4 = R8;
+    MODIFY(I4, VSIZE);
     R10 = R10 - 1;
     IF NE JUMP s_v;
 
-    F8 = 0.59999999999999997779554;                       // soft clip
-    F5 = F5 * F8;
+    F5 = F5 * F12;                      // Fuzz drive, then the soft clip
     F8 = 1.0;
     F5 = MIN(F5, F8);
     F8 = -1.0;
@@ -380,10 +373,7 @@ v_3:
     F9 = 0.0625;
     F11 = F11 * F9;
     DM(V_DG, I4) = F11;
-    R8 = I4;
-    R9 = VSIZE;
-    R8 = R8 + R9;
-    I4 = R8;
+    MODIFY(I4, VSIZE);
     RTS;
 
 // ---- F0 clamped to 0..1. Uses F8.

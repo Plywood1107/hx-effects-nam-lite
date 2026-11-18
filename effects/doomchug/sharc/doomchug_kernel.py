@@ -28,28 +28,28 @@ def tables():
 
 
 SPEC = kr.Spec('doomchug', os.path.join(HERE, 'doomchug_kernel.asm'), 'DOOMCHUG_ENTRY',
-               knobs=dict(key=5, pattern=6, rate=7, drift=8, warble=9, chug=10, tone=11, level=13),
+               knobs=dict(key=5, pattern=6, rate=7, drift=8, warble=9, fuzz=10, tone=11, level=13),
                int_knobs={'key', 'pattern'},
-               order=['key', 'pattern', 'rate', 'drift', 'warble', 'chug', 'tone', 'level'],     # = doomchug.h Q_*
+               order=['key', 'pattern', 'rate', 'drift', 'warble', 'fuzz', 'tone', 'level'],     # = doomchug.h Q_*
                state=STATE, constants=CONSTANTS, nslots=1, tables=tables(), max_cycles=6000,
                extra_equ=[f'.equ SEED, {SEED:#x}', f'.equ VSIZE, {len(VFIELDS)}'] +
                          [f'.equ V_{n}, {k}' for k, n in enumerate(VFIELDS)])
 SPEC.places['b2'] = (0xC4EF8, 0xC5554, 0xE4850)        # a Doom-Chug-only placement, for the check
 
 CASES = [
-    dict(key=0, pattern=1, rate=0.5, drift=0.35, warble=0.5, chug=0.4, tone=0.25, level=0.5),     # the defaults
-    dict(key=0, pattern=0, rate=0.5, drift=0, warble=0, chug=0, tone=1, level=1),
-    dict(key=11, pattern=7, rate=1, drift=1, warble=1, chug=1, tone=1, level=1),                  # everything up
-    dict(key=5, pattern=4, rate=0.95, drift=0.6, warble=0.8, chug=0.7, tone=0.1, level=0.8),
-    dict(key=7, pattern=8, rate=0.0, drift=0.2, warble=0.1, chug=0.1, tone=0.5, level=0.3),
-    dict(key=99, pattern=99, rate=9, drift=9, warble=9, chug=9, tone=9, level=9),                 # out of range
-    dict(key=-9, pattern=-9, rate=-9, drift=-9, warble=-9, chug=-9, tone=-9, level=-9),
+    dict(key=0, pattern=1, rate=0.5, drift=0.35, warble=0.5, fuzz=0.4, tone=0.25, level=0.5),     # the defaults
+    dict(key=0, pattern=0, rate=0.5, drift=0, warble=0, fuzz=0, tone=1, level=1),
+    dict(key=11, pattern=7, rate=1, drift=1, warble=1, fuzz=1, tone=1, level=1),                  # everything up
+    dict(key=5, pattern=4, rate=0.95, drift=0.6, warble=0.8, fuzz=0.7, tone=0.1, level=0.8),
+    dict(key=7, pattern=8, rate=0.0, drift=0.2, warble=0.1, fuzz=0.1, tone=0.5, level=0.3),
+    dict(key=99, pattern=99, rate=9, drift=9, warble=9, fuzz=9, tone=9, level=9),                 # out of range
+    dict(key=-9, pattern=-9, rate=-9, drift=-9, warble=-9, fuzz=-9, tone=-9, level=-9),
 ]
 
 
 def rnd_knobs(r):
     return dict(key=r.randint(0, 11), pattern=r.randint(0, 8), rate=r.uniform(0, 1), drift=r.uniform(0, 1),
-                warble=r.uniform(0, 1), chug=r.uniform(0, 1), tone=r.uniform(0, 1), level=r.uniform(0, 1))
+                warble=r.uniform(0, 1), fuzz=r.uniform(0, 1), tone=r.uniform(0, 1), level=r.uniform(0, 1))
 
 
 def check(seconds=1.0, place='b2'):

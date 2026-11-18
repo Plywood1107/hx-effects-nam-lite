@@ -15,11 +15,11 @@ static int failures, checks;
 
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-static void set(FxParams *p, int key, int pattern, float rate, float drift, float warble, float chug, float tone, float level)
+static void set(FxParams *p, int key, int pattern, float rate, float drift, float warble, float fuzz, float tone, float level)
 {
     memset(p, 0, sizeof *p);
     p->value[Q_KEY] = (float)key; p->value[Q_PATTERN] = (float)pattern; p->value[Q_RATE] = rate;
-    p->value[Q_DRIFT] = drift; p->value[Q_WARBLE] = warble; p->value[Q_CHUG] = chug; p->value[Q_TONE] = tone;
+    p->value[Q_DRIFT] = drift; p->value[Q_WARBLE] = warble; p->value[Q_FUZZ] = fuzz; p->value[Q_TONE] = tone;
     p->value[Q_LEVEL] = level;
 }
 
@@ -62,7 +62,6 @@ int main(void)
     DoomChugState s;
     FxParams p;
     float lo, hi, a, b;
-    double peak, floor_e;
     size_t i;
     int k, step, key;
     if (!x || !y || !z) return 2;
@@ -98,23 +97,20 @@ int main(void)
     set(&p, 0, 4, 0.75f, 0, 0, 0, 1, 1); pitch_range(&p, x, y, &lo, &hi);
     CHECK(lo < 110.5f && hi > 300.0f, "pattern 4: %g .. %g Hz", lo, hi);
 
-    /* Chug: 1 is loud on the step and much quieter before the next; 0 is steady */
-    set(&p, 0, 0, 0.3f, 0, 0, 1, 0.5f, 1); render(&s, &p, x, y, N, 16);
-    peak = 0; floor_e = 1e9;
-    for (i = 0; i + 960 <= N; i += 960) {
-        double e = rms(y + i, 960);
-        if (e > peak) peak = e;
-        if (e < floor_e) floor_e = e;
+    /* Fuzz: 1 squares the drone off (a lower peak-to-rms ratio than 0) at about the same level */
+    {
+        double r0, r1, pk0 = 0, pk1 = 0;
+        set(&p, 0, 0, 0.3f, 0, 0, 0, 1, 1); render(&s, &p, x, y, N, 16);
+        set(&p, 0, 0, 0.3f, 0, 0, 1, 1, 1); render(&s, &p, x, z, N, 16);
+        r0 = rms(y + 48000, N - 48000); r1 = rms(z + 48000, N - 48000);
+        for (i = 48000; i < N; i++) {
+            if (fabs(y[i]) > pk0) pk0 = fabs(y[i]);
+            if (fabs(z[i]) > pk1) pk1 = fabs(z[i]);
+        }
+        CHECK(r0 > 0.01 && r1 > 0.01, "Fuzz 0 rms %g, Fuzz 1 rms %g", r0, r1);
+        CHECK(pk1 / r1 < 0.85 * (pk0 / r0), "Fuzz 1 crest %g is not squarer than Fuzz 0's %g", pk1 / r1, pk0 / r0);
+        CHECK(r1 > 0.5 * r0 && r1 < 2.0 * r0, "Fuzz changes the level too much: rms %g at 0, %g at 1", r0, r1);
     }
-    CHECK(peak > 0.05 && floor_e < 0.2 * peak, "Chug 1: peak %g, floor %g", peak, floor_e);
-    set(&p, 0, 0, 0.3f, 0, 0, 0, 0.5f, 1); render(&s, &p, x, y, N, 16);
-    peak = 0; floor_e = 1e9;
-    for (i = 48000; i + 960 <= N; i += 960) {
-        double e = rms(y + i, 960);
-        if (e > peak) peak = e;
-        if (e < floor_e) floor_e = e;
-    }
-    CHECK(floor_e > 0.5 * peak, "Chug 0: peak %g, floor %g", peak, floor_e);
 
     /* Tone 0 is darker than Tone 1 */
     set(&p, 0, 1, 0.5f, 0.3f, 0.3f, 0, 0, 1); render(&s, &p, x, y, N, 16);

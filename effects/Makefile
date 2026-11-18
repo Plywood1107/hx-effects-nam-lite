@@ -9,11 +9,11 @@ CFLAGS ?= -std=c99 -O2 -ffp-contract=off -Wall -Wextra -Wpedantic -Werror -Wshad
 LDLIBS = -lm
 
 COMMON = common/fx.c common/wav.c common/signals.c
-EFFECTS = geiger/geiger.c metronome/metronome.c commander/commander.c corrupt/corrupt.c ottobit/ottobit.c stutter/stutter.c syntax/syntax.c grains/grains.c sequence/sequence.c warp/warp.c doomchug/doomchug.c
-HEADERS = common/*.h geiger/*.h metronome/*.h commander/*.h corrupt/*.h ottobit/*.h stutter/*.h syntax/*.h grains/*.h sequence/*.h warp/*.h doomchug/*.h
+EFFECTS = geiger/geiger.c metronome/metronome.c commander/commander.c corrupt/corrupt.c ottobit/ottobit.c stutter/stutter.c syntax/syntax.c grains/grains.c sequence/sequence.c warp/warp.c doomchug/doomchug.c bethblahem/bethblahem.c puggy/puggy.c greasy/greasy.c drumchapel/drumchapel.c purewhitey/purewhitey.c
+HEADERS = common/*.h geiger/*.h metronome/*.h commander/*.h corrupt/*.h ottobit/*.h stutter/*.h syntax/*.h grains/*.h sequence/*.h warp/*.h doomchug/*.h bethblahem/*.h puggy/*.h greasy/*.h drumchapel/*.h purewhitey/*.h
 OUT = out
 
-all: $(OUT)/fxrender $(OUT)/test_geiger $(OUT)/test_metronome $(OUT)/test_commander $(OUT)/test_corrupt $(OUT)/test_ottobit $(OUT)/test_stutter $(OUT)/test_syntax $(OUT)/test_grains $(OUT)/test_sequence $(OUT)/test_warp $(OUT)/test_doomchug
+all: $(OUT)/fxrender $(OUT)/test_geiger $(OUT)/test_metronome $(OUT)/test_commander $(OUT)/test_corrupt $(OUT)/test_ottobit $(OUT)/test_stutter $(OUT)/test_syntax $(OUT)/test_grains $(OUT)/test_sequence $(OUT)/test_warp $(OUT)/test_doomchug $(OUT)/test_bethblahem $(OUT)/test_puggy $(OUT)/test_greasy $(OUT)/test_drumchapel $(OUT)/test_purewhitey
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -54,6 +54,21 @@ $(OUT)/test_warp: warp/test_warp.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 $(OUT)/test_doomchug: doomchug/test_doomchug.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -o $@ doomchug/test_doomchug.c $(COMMON) $(EFFECTS) $(LDLIBS)
 
+$(OUT)/test_purewhitey: purewhitey/test_purewhitey.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ purewhitey/test_purewhitey.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
+$(OUT)/test_drumchapel: drumchapel/test_drumchapel.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ drumchapel/test_drumchapel.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
+$(OUT)/test_greasy: greasy/test_greasy.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ greasy/test_greasy.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
+$(OUT)/test_puggy: puggy/test_puggy.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ puggy/test_puggy.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
+$(OUT)/test_bethblahem: bethblahem/test_bethblahem.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ bethblahem/test_bethblahem.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
 # the reference as a shared library, for the SHARC kernels' checks (ctypes)
 $(OUT)/libfx.so: $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -shared -fPIC -o $@ $(COMMON) $(EFFECTS) $(LDLIBS)
@@ -72,6 +87,11 @@ sharc-check: $(OUT)/libfx.so
 	../.venv/bin/python3 sequence/sharc/sequence_kernel.py --check --seconds 0.25
 	../.venv/bin/python3 warp/sharc/warp_kernel.py --check --seconds 0.25
 	../.venv/bin/python3 doomchug/sharc/doomchug_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 purewhitey/sharc/purewhitey_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 drumchapel/sharc/drumchapel_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 greasy/sharc/greasy_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 puggy/sharc/puggy_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 bethblahem/sharc/bethblahem_kernel.py --check --seconds 0.25
 
 test: all
 	$(OUT)/test_geiger geiger/golden.txt
@@ -86,6 +106,16 @@ test: all
 	$(OUT)/test_warp
 	$(OUT)/test_doomchug
 	$(OUT)/fxrender describe doomchug | diff -u doomchug/params.json - && echo "doomchug params.json up to date"
+	$(OUT)/test_purewhitey
+	$(OUT)/fxrender describe purewhitey | diff -u purewhitey/params.json - && echo "purewhitey params.json up to date"
+	$(OUT)/test_drumchapel
+	$(OUT)/fxrender describe drumchapel | diff -u drumchapel/params.json - && echo "drumchapel params.json up to date"
+	$(OUT)/test_greasy
+	$(OUT)/fxrender describe greasy | diff -u greasy/params.json - && echo "greasy params.json up to date"
+	$(OUT)/test_puggy
+	$(OUT)/fxrender describe puggy | diff -u puggy/params.json - && echo "puggy params.json up to date"
+	$(OUT)/test_bethblahem
+	$(OUT)/fxrender describe bethblahem | diff -u bethblahem/params.json - && echo "bethblahem params.json up to date"
 	$(OUT)/fxrender describe warp | diff -u warp/params.json - && echo "warp params.json up to date"
 	$(OUT)/fxrender describe sequence | diff -u sequence/params.json - && echo "sequence params.json up to date"
 	$(OUT)/fxrender describe grains | diff -u grains/params.json - && echo "grains params.json up to date"

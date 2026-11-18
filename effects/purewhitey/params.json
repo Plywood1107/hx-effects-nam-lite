@@ -1,0 +1,14 @@
+{
+  "id": "purewhitey",
+  "display_name": "Pure Whitey",
+  "parameters": [
+    {"id": "mode", "display": "Mode", "type": "integer", "min": 0, "max": 7, "default": 0, "unit": "0 Repeat, 1 Random, 2 Reverse, 3 Trigger, 4 Square Trigger, 5 Square, 6 Up, 7 Down", "smoothing": "immediate"},
+    {"id": "time", "display": "Time", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "20 ms .. 0.34 s, random at 1", "smoothing": "immediate"},
+    {"id": "func", "display": "Func", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "per mode", "smoothing": "immediate"},
+    {"id": "sens", "display": "Sens", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "attack sensitivity", "smoothing": "immediate"},
+    {"id": "tone", "display": "Tone", "type": "continuous", "min": 0, "max": 1, "default": 0.8, "unit": "", "smoothing": "immediate"},
+    {"id": "dry", "display": "Dry", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "mix", "display": "Mix", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"}
+  ]
+}

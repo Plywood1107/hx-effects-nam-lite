@@ -1,0 +1,14 @@
+{
+  "id": "puggy",
+  "display_name": "Puggy Puncher",
+  "parameters": [
+    {"id": "time", "display": "Time", "type": "continuous", "min": 0.1, "max": 4, "default": 0.5, "unit": "s (one beat)", "smoothing": "immediate (BPM rounded to 0.01)"},
+    {"id": "step", "display": "Step", "type": "integer", "min": 0, "max": 10, "default": 8, "unit": "0 1/2, 1 1/4., 2 1/4, 3 1/4T, 4 1/8., 5 1/8, 6 1/8T, 7 1/16., 8 1/16, 9 1/16T, 10 1/32", "smoothing": "immediate"},
+    {"id": "chance", "display": "Chance", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "probability a step is not clean", "smoothing": "immediate"},
+    {"id": "wild", "display": "Wild", "type": "integer", "min": 0, "max": 10, "default": 0, "unit": "0 All, 1 Gentle, 2 Rhythm, 3 Mean, 4 Low, 5 Dirt, 6 Chop, 7 Octave, 8 Crush, 9 Filter, 10 Fuzz", "smoothing": "immediate"},
+    {"id": "hold", "display": "Hold", "type": "integer", "min": 1, "max": 8, "default": 1, "unit": "steps a roll lasts", "smoothing": "immediate"},
+    {"id": "seed", "display": "Seed", "type": "integer", "min": 0, "max": 16, "default": 0, "unit": "0 Random, 1..16 (repeats every bar)", "smoothing": "immediate"},
+    {"id": "mix", "display": "Mix", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"},
+    {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 1, "unit": "x (shown as %)", "smoothing": "immediate"}
+  ]
+}

@@ -21,7 +21,9 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
-          'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/ottobit/sharc', '.'):
+          'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc',
+          'effects/doomchug/sharc', 'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc',
+          'effects/bethblahem/sharc', 'effects/puggy/sharc', '.'):
     sys.path.insert(0, os.path.join(ROOT, p))
 os.environ['NAM_DEVICE'] = 'effects'
 import build_all  # noqa: E402
@@ -45,14 +47,14 @@ OVL = man.get('overlay')
 if OVL:                                               # what the build set: the kernels assemble as they did for the image
     import geiger_kernel  # noqa: E402
     import importlib  # noqa: E402
-    import ottobit_kernel  # noqa: E402
     import ovl_stub_kernel  # noqa: E402
-    sys.path.insert(0, os.path.join(ROOT, 'effects', 'syntax', 'sharc'))
     geiger_kernel.EXT_CURVES = OVL['curves']
-    ottobit_kernel.SPEC = ottobit_kernel.make_spec(OVL['ring0'])
+    rings = OVL.get('rings') or {'ottobit': OVL['ring0']}
     OVL_MEMBERS = []
     for n in OVL['names']:
         mod = importlib.import_module(f'{n}_kernel')
+        if n in rings:
+            mod.SPEC = mod.make_spec(rings[n])
         mod.SPEC.places['b3'] = tuple(OVL['place'])
         OVL_MEMBERS.append((n.upper(), mod.SPEC, 'b3', f'{n.upper()}_ENTRY'))
     ovl_stub_kernel.configure(code_n=OVL['code_n'], data0=OVL['data0'], members=OVL['members'], meter=OVL.get('meter', False))
@@ -141,11 +143,20 @@ for k in FX:
     E = build_all.EFFECTS[k]
     g, mg = model(allimg, man[k]['model'])
     gmeta = dict(g['meta'])
-    cat = E.get('category', ('distortion', 'mono'))
+    cat = (pa.find_model(pa.parse_entry3_full(pa.get_entry_swapped(stock, 3)), E['takeover'])['meta'].get('category'), 'mono')
     check(g['display'] == E['display'] and gmeta.get('category') == cat[0] and gmeta.get('subcategory') == cat[1],
           f'{man[k]["model"]} (model {mg["model_id"]}) is {g["display"]}, {gmeta.get("category")} > {gmeta.get("subcategory")}')
-    got = [(p[2], p[0], dict(p[4]).get('displayName')) for p in g['params']]
-    check(got == [(s[0], s[3], s[4]) for s in E['params']], f'  eight knobs: {[x[2] for x in got]}')
+    if E.get('meta_drop') or E.get('meta_type'):     # a host whose DSP owns its on/off (Ratchet): bypassed like any block
+        check(not set(E.get('meta_drop', ())) & set(gmeta) and gmeta.get('type', E.get('meta_type')) == E.get('meta_type', gmeta.get('type')),
+              f'  {g["display"]}: no {", ".join(E.get("meta_drop", ()))} in its metadata; type {gmeta.get("type")}')
+    got =[(p[2], p[0], dict(p[4]).get('displayName')) for p in g['params']]
+    if E.get('sync'):                                 # Time and its tempo-sync pair, as Click's, around the knobs
+        knobs = [t for t in E['params'] if t[0] != 1]
+        want = [(1, 'Time', got[0][2])] + [(t[0], t[3], t[4]) for t in knobs] + \
+            [(len(knobs) + 2, 'SyncSelect1', got[-2][2]), (len(knobs) + 3, 'TempoSync1', got[-1][2])]
+    else:
+        want = [(t[0], t[3], t[4]) for t in E['params']]
+    check(got == want, f'  knobs: {[x[2] for x in got]}')
     for p in g['params']:
         lab = [v for kk, v in p[4] if kk.isdigit()]
         if lab:
@@ -153,11 +164,13 @@ for k in FX:
     bg = blob(allimg, mg['blob_index'])
     pin, npin = bg[10], bg[11]
     writes = sorted(bg[pin + 4 * j + 1] for j in range(npin) if bg[pin + 4 * j + 3] == 2 and bg[pin + 4 * j] == 0x0e)
-    check(writes == [5, 6, 7, 8, 9, 10, 11, 13], f'  its map writes instance words {writes}')
+    check(writes == [5, 6, 7, 8, 9, 10, 11, 13], f'  its map writes instance words {writes}' + (' (word 5: Time, through the tempo-sync nodes)' if E.get('sync') else ''))
     check(pa.pmap_slots_without_param(pa.get_entry_swapped(allimg, 4), mg['blob_index'], mg['params']) == [], '  every mapped slot has a knob')
     t1, t2 = e0_rows(allimg, man[k]['model'])
-    short = E['display'].encode()
-    check(t1[3] == man[k]['dsp_cost'] and struct.unpack_from('<3I', t2, 24) == (8, 8, 8) and t2[4:4 + len(short)] == short,
+    short = E.get('short', E['display']).encode()
+    nk = len(g['params'])
+    counts = (nk - 2, nk, nk) if E.get('sync') else (nk, nk, nk)
+    check(t1[3] == man[k]['dsp_cost'] and struct.unpack_from('<3I', t2, 24) == counts and t2[4:4 + len(short)] == short,
           f'  Entry 0: dsp_cost {t1[3]}, counts {struct.unpack_from("<3I", t2, 24)}, short name {t2[4:20].rstrip(bytes(1))!r}')
 
 # Blob 0

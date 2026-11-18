@@ -11,3 +11,6 @@ __pycache__/
 # USB traffic logs carry firmware bytes
 usblog/
 tools/usb/usblog.dylib
+
+# Claude Code agent worktrees
+.claude/
