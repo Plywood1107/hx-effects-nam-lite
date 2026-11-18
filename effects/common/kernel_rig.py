@@ -168,6 +168,9 @@ class Rig:
                     self.sim.pm[code48 + 2 * pair] = int.from_bytes(raw[:6], 'little')
                     self.sim.pm[code48 + 2 * pair + 1] = int.from_bytes(raw[6:], 'little')
             self.sim.wr = view_wr
+        for ea, ewords in getattr(spec, 'ext', []):      # read-only tables outside its data (DDR2 on the unit)
+            for k, w in enumerate(ewords):
+                self.sim.dm[ea + k] = w
         g = random.Random(seed + 1000)
         for lo, hi in getattr(spec, 'garbage', []):      # memory the kernel must not read before writing
             for a in range(lo, hi):

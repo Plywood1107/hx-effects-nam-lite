@@ -757,7 +757,7 @@ def _parse_e0_segments_any(e0):
 
 
 def takeover_entry0_effects(e0, tgt_name_idx, display_name, short_name=None, dsp_cost=None, n_params=None, strip_title='NAM / IR_2048',
-                            n_display=None):
+                            n_display=None, follow_enable=None):
     """HX Effects: the target model keeps its identity (name index, preset id, btype, list entry);
     only its Table 1 cost, Table 2 counts/short name and browser display name change, in place."""
     A = EFFECTS_E0
@@ -787,6 +787,12 @@ def takeover_entry0_effects(e0, tgt_name_idx, display_name, short_name=None, dsp
             if n_params is not None:
                 # (knobs shown, parameters, parameters): a delay's sync controls share its Time knob
                 struct.pack_into('<3I', row, 24, n_params if n_display is None else n_display, n_params, n_params)
+            if follow_enable is not None:
+                # word 36: 1 exactly for the 15 Entry 3 'followEnable' models (Ratchet, Tesselator, 3 Note
+                # Generator...): the unit then keeps the block running when it is off and leaves the on/off to its
+                # DSP. 0 for every other model, which the footswitch bypasses.
+                assert struct.unpack_from('<I', row, 36)[0] in (0, 1)
+                struct.pack_into('<I', row, 36, int(follow_enable))
             vwrite(va, bytes(row)); done = True
     assert done, 'target model not in Table 2'
     # the browser item's display name, wherever it is listed

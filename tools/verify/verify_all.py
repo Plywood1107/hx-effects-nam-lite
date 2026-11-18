@@ -5,7 +5,8 @@ single-effect images for comparison:
 - NAM (model 72) and Click (model 48): parameters, metadata, states and Entry 0 rows as in their own
   images (build_effects.py, build_click.py); host blobs word for word but for the composite id;
 - Geiger (model 7, the mono Megaphone), and Commander / Corrupt when built in: the eight knobs as
-  build_all.py defines them, in Distortion > Mono, the map writing instance words 5..11 and 13;
+  build_all.py defines them, in Distortion > Mono, the map writing the instance words of their knobs (5..11 and 13;
+  Drum Chapel also 14, its Groove);
 - Entry 2: each kernel's code and data are what its assembler makes for its place (NAM from
   build/nam_lite_2slots[_fd17].asm), each hook record points at its kernel, Blob 0's size word and Heap 6;
 - Blob 0: the three host composites, member 1 of each on its own primitive, within the buffer;
@@ -23,7 +24,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
           'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc',
           'effects/doomchug/sharc', 'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc',
-          'effects/bethblahem/sharc', 'effects/puggy/sharc', '.'):
+          'effects/drumchapel', 'effects/bethblahem/sharc', 'effects/puggy/sharc', '.'):
     sys.path.insert(0, os.path.join(ROOT, p))
 os.environ['NAM_DEVICE'] = 'effects'
 import build_all  # noqa: E402
@@ -56,6 +57,8 @@ if OVL:                                               # what the build set: the 
         if n in rings:
             mod.SPEC = mod.make_spec(rings[n])
         mod.SPEC.places['b3'] = tuple(OVL['place'])
+        if n == 'drumchapel' and OVL.get('grooves'):   # its grooves bank, where the build put it
+            mod.place_bank(mod.SPEC, OVL['grooves']['bank'])
         OVL_MEMBERS.append((n.upper(), mod.SPEC, 'b3', f'{n.upper()}_ENTRY'))
     ovl_stub_kernel.configure(code_n=OVL['code_n'], data0=OVL['data0'], members=OVL['members'], meter=OVL.get('meter', False))
 
@@ -164,7 +167,8 @@ for k in FX:
     bg = blob(allimg, mg['blob_index'])
     pin, npin = bg[10], bg[11]
     writes = sorted(bg[pin + 4 * j + 1] for j in range(npin) if bg[pin + 4 * j + 3] == 2 and bg[pin + 4 * j] == 0x0e)
-    check(writes == [5, 6, 7, 8, 9, 10, 11, 13], f'  its map writes instance words {writes}' + (' (word 5: Time, through the tempo-sync nodes)' if E.get('sync') else ''))
+    want_words = sorted({t[1] for t in E['params'] if not (E.get('sync') and t[0] == 1)} | ({5} if E.get('sync') else set()))
+    check(writes == want_words, f'  its map writes instance words {writes}' + (' (word 5: Time, through the tempo-sync nodes)' if E.get('sync') else ''))
     check(pa.pmap_slots_without_param(pa.get_entry_swapped(allimg, 4), mg['blob_index'], mg['params']) == [], '  every mapped slot has a knob')
     t1, t2 = e0_rows(allimg, man[k]['model'])
     short = E.get('short', E['display']).encode()
@@ -172,6 +176,24 @@ for k in FX:
     counts = (nk - 2, nk, nk) if E.get('sync') else (nk, nk, nk)
     check(t1[3] == man[k]['dsp_cost'] and struct.unpack_from('<3I', t2, 24) == counts and t2[4:4 + len(short)] == short,
           f'  Entry 0: dsp_cost {t1[3]}, counts {struct.unpack_from("<3I", t2, 24)}, short name {t2[4:20].rstrip(bytes(1))!r}')
+    fe = struct.unpack_from('<I', t2, 36)[0]          # 1 = followEnable: the unit keeps the block running when off
+    check(fe == (1 if 'followEnable' in gmeta else 0),
+          f'  Entry 0 follow-enable word {fe}, matching its metadata (0: the footswitch bypasses it)')
+    if E.get('plain_delay'):                          # a 'special' delay host made ordinary (tools/special_delay_patch.py)
+        import special_delay_patch as sdp
+        n0 = bytes(pa.get_entry_swapped(allimg, 0))
+        s0 = pa._parse_e0_segments_any(bytearray(n0))
+        movs = [pa._decode_thumb_movw(n0[pa._e0_vaddr_to_foff(s0, va, 4):][:4])[1] for va in sdp.SITES]
+        types = []
+        for slot in range(52):
+            lp = struct.unpack_from('<I', n0, pa._e0_vaddr_to_foff(s0, pa.EFFECTS_E0.BLIST_PTR_TAB + 4 * slot))[0]
+            lc = struct.unpack_from('<I', n0, pa._e0_vaddr_to_foff(s0, pa.EFFECTS_E0.BLIST_CNT_TAB + 4 * slot))[0]
+            for i in range(lc if lp else 0):
+                o = pa._e0_vaddr_to_foff(s0, lp + 48 * i, 8)
+                if struct.unpack_from('<I', n0, o + 4)[0] == sdp.RATCHET_MONO:
+                    types.append(n0[o])
+        check(movs == [sdp.NOBODY] * 3 and types == [sdp.DELAY_TYPE],
+              f'  an ordinary delay: block type {[hex(t) for t in types]}, special-delay compares look for {[hex(m) for m in movs]}')
 
 # Blob 0
 b0 = blob(allimg, 0)
@@ -187,10 +209,17 @@ if OVL:
     base = pa.SHARC_BLOB0_BASE
     t = OVL['curves'] - base
     curves = geiger_kernel.tables()
-    o_words, o_cfg = ovl_stub_kernel.layout(OVL_MEMBERS, OVL['curves'] + len(curves))
-    want_pad = curves + o_words
+    gr = OVL.get('grooves')
+    dc_bank = importlib.import_module('drumchapel_kernel').bank() if gr else []
+    if gr:
+        check(gr['bank'] == OVL['curves'] + len(curves) and gr['words'] == len(dc_bank),
+              f'Drum Chapel grooves: {len(dc_bank)} words at DDR2 {gr["bank"]:#x} (right after Geiger\'s curves), '
+              f'{gr["families"]} of 11 families')
+    o_words, o_cfg = ovl_stub_kernel.layout(OVL_MEMBERS, OVL['curves'] + len(curves) + len(dc_bank))
+    want_pad = curves + dc_bank + o_words
+    what = "Geiger's curves, Drum Chapel's grooves" if gr else "Geiger's curves"
     check(b0[t: t + len(want_pad)] == want_pad and o_cfg['members'] == OVL['members'],
-          f'Blob 0 carries Geiger\'s curves and the overlays at {t:#x} ({len(want_pad)} words), as assembled')
+          f'Blob 0 carries {what} and the overlays at {t:#x} ({len(want_pad)} words), as assembled')
     check(ctab == t + len(want_pad), '  right before the last composite table')
     h = b0[ctab + 7 * (b0[0xf] - 1): ctab + 7 * b0[0xf]]
     check(h[5] + 4 * h[4] == len(b0), '  Blob 0 still ends at its last composite')

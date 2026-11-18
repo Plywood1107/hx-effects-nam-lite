@@ -6,14 +6,19 @@
 // DM block, I1 = 16 inputs, I2 = 16 outputs; R0-R15, I1-I4 and MODE1 come back unchanged; L1-L4 left
 // 0; no hardware loops; DM(3, I0) never touched; only P_SLOT (12) written; state in one of NSLOTS
 // claimed slots (no buffer anywhere else). Each voice's state: VW words from ST_V0, fields VS_*; a kit's
-// words from T_KIT + kit x DK_WORDS, fields DK_* and, per voice, DV_*.
+// words from T_KIT + kit x DK_WORDS, fields DK_* and, per definition, DV_* (VS_DEF: the offset of the one a
+// voice plays, from its kit's first word).
 //
 // Knob words: DM(5) Time s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..5), DM(8) Kick 0..1,
-//             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1.
+//             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1, DM(14) Groove (int 0..11).
+//
+// The grooves are a read-only bank in DDR2 (inside Blob 0, at T_DIR; drumchapel.h): a directory word per
+// Groove x Pattern, (first step << 9) | length, then the steps, four bytes to a word from T_STEPS. Read only
+// when a step falls: the directory word and the step's word, two reads a sixteenth.
 //
 // A call: the knobs; the tempo for the 16 samples (at most one step falls in a call: a sixteenth is at
-// least 1,500 samples, swing delays one by at most a third); then each sample: the step's hits, the noise,
-// the three voices, the kit's drive and clip, Level, and the input added.
+// least 1,200 samples, swing delays one by at most a third), and that step's byte from the bank; then each
+// sample: the step's hits, the noise, the four voices, the kit's drive and clip, Level, and the input added.
 
 .equ PEYEN,    0x200000
 .equ BDCST9,   0x400000
@@ -105,6 +110,8 @@ c_zero:
     DM(ST_RND, I3) = R13;
     R13 = 1;
     DM(ST_PEND, I3) = R13;
+    R13 = 16;                           // a Classic bar until the first step reads its groove
+    DM(ST_LEN, I3) = R13;
 c_have:
     DM(S_LAST, I3) = R9;
 
@@ -161,10 +168,27 @@ k_divn:
     CALL g_cl;
     F4 = PASS F15;
 
-    // ---- the tempo for this call: which sample (if any) a step fires on -> R2 = count << 4 | step
+    R9 = DM(14, I0);                    // Groove 0..11, Pattern 0..19 -> their directory word's address (R14)
+    R8 = 0;
+    R9 = MAX(R9, R8);
+    R8 = 11;
+    R9 = MIN(R9, R8);
+    R8 = 20;
+    R9 = R9 * R8 (UUI);
+    R14 = DM(6, I0);
+    R8 = 0;
+    R14 = MAX(R14, R8);
+    R8 = 19;
+    R14 = MIN(R14, R8);
+    R14 = R14 + R9;
+    R8 = T_DIR;
+    R14 = R14 + R8;
+
+    // ---- the tempo for this call: which sample (if any) a step fires on, and its byte -> R2 = count << 8 | byte
     R8 = DM(ST_ACC, I3);
     R9 = DM(ST_STEP, I3);
     R10 = DM(ST_PEND, I3);
+    R13 = DM(ST_LEN, I3);
     R2 = 0;
     R12 = PERIOD;
     R6 = 16;
@@ -176,17 +200,41 @@ p_loop:
     IF NE R11 = PASS R1;                // odd steps wait for the swing
     COMPU(R8, R11);
     IF LT JUMP p_adv;
+    I4 = R14;                           // the step falls: its groove's length (R13) and first step,
+    R11 = DM(0, I4);                    // (DDR2) the directory word
+    R10 = 511;
+    R13 = R11 AND R10;
+    R11 = LSHIFT R11 BY -9;
+p_mod:                                  // the step mod the length (a groove changed mid-play continues there)
+    COMP(R9, R13);
+    IF LT JUMP p_byte;
+    R9 = R9 - R13;
+    JUMP p_mod;
+p_byte:
+    R11 = R11 + R9;                     // its byte: the step's index in the bank -> word, byte in it
+    R3 = LSHIFT R11 BY -2;
+    R10 = T_STEPS;
+    R3 = R3 + R10;
+    I4 = R3;
+    R3 = DM(0, I4);                     // (DDR2) four steps
+    R10 = 3;
+    R11 = R11 AND R10;
+    R11 = LSHIFT R11 BY 3;
+    R11 = -R11;
+    R3 = LSHIFT R3 BY R11;
+    R10 = 255;
+    R3 = R3 AND R10;
+    R2 = LSHIFT R6 BY 8;
+    R2 = R2 OR R3;
     R10 = 0;
-    R2 = LSHIFT R6 BY 4;
-    R2 = R2 OR R9;
 p_adv:
     R8 = R8 + R0;
     COMP(R8, R12);
     IF LT JUMP p_next;
     R8 = R8 - R12;
-    R9 = R9 + 1;
-    R11 = 15;
-    R9 = R9 AND R11;
+    R9 = R9 + 1;                        // the next step, wrapping at the groove's length
+    COMP(R9, R13);
+    IF GE R9 = R9 - R9;
     R10 = 1;
 p_next:
     R6 = R6 - 1;
@@ -194,49 +242,18 @@ p_next:
     DM(ST_ACC, I3) = R8;
     DM(ST_STEP, I3) = R9;
     DM(ST_PEND, I3) = R10;
+    DM(ST_LEN, I3) = R13;
 
     // ---- the samples
     R0 = R2;
     R6 = 16;
 s_loop:
-    R8 = LSHIFT R0 BY -4;
+    R8 = LSHIFT R0 BY -8;
     COMP(R8, R6);
     IF NE JUMP s_noise;
 
-    // ---- the step's hits: bit 0 kick, 1 snare, 2 hat (R11)
-    R9 = DM(6, I0);                     // Pattern 0..19
-    R8 = 0;
-    R9 = MAX(R9, R8);
-    R8 = 19;
-    R9 = MIN(R9, R8);
-    R8 = T_KS;
-    R8 = R8 + R9;
-    I4 = R8;
-    R11 = DM(0, I4);                    // kick | snare << 16
-    R8 = LSHIFT R9 BY -1;
-    R10 = T_HAT;
-    R8 = R8 + R10;
-    I4 = R8;
-    R12 = DM(0, I4);                    // two patterns' hats
-    R8 = 1;
-    R9 = R9 AND R8;
-    R9 = LSHIFT R9 BY 4;
-    R9 = -R9;
-    R12 = LSHIFT R12 BY R9;
-    R9 = 15;
-    R9 = R0 AND R9;
-    R9 = -R9;
-    R11 = LSHIFT R11 BY R9;
-    R12 = LSHIFT R12 BY R9;
-    R9 = LSHIFT R11 BY -15;
-    R10 = 2;
-    R9 = R9 AND R10;
-    R11 = R11 AND R8;
-    R11 = R11 OR R9;
-    R12 = R12 AND R8;
-    R12 = LSHIFT R12 BY 2;
-    R11 = R11 OR R12;
-    F15 = DM(8, I0);                    // the voices' knobs: F7 kick, F1 snare, F12 hat
+    // ---- the step's hits (R11 = its byte: bit v = voice v; the hat open; the tom's pitch in bits 5-6)
+    F15 = DM(8, I0);                    // the voices' knobs: F7 kick, F1 snare, F12 hat; the tom the kick's
     CALL g_cl;
     F7 = PASS F15;
     F15 = DM(9, I0);
@@ -245,14 +262,42 @@ s_loop:
     F15 = DM(10, I0);
     CALL g_cl;
     F12 = PASS F15;
-    I4 = R5;
-    MODIFY(I4, DK_V0);
+    R11 = 255;
+    R11 = R0 AND R11;
+    R14 = DO_HAT;                       // the hat's definition (R14): closed, or open
+    R9 = B_OPEN;
+    R9 = R11 AND R9;
+    IF EQ JUMP h_closed;
+    R14 = DO_OPEN;
+h_closed:
+    R9 = LSHIFT R11 BY -5;              // (B_PITCH) the tom's rate x (F15), from its pitch
+    R10 = 3;
+    R9 = R9 AND R10;
+    R10 = T_TUNE;
+    R9 = R9 + R10;
+    I4 = R9;
+    F15 = DM(0, I4);
     MODIFY(I3, ST_V0);
-    R13 = 3;
+    R13 = 0;
 h_loop:
     R8 = 1;
     R8 = R8 AND R11;
     IF EQ JUMP h_next;
+    R9 = DV_WORDS;                      // its definition: DK_V0 + voice x DV_WORDS, the hat's R14
+    R9 = R9 * R13 (UUI);
+    R10 = DK_V0;
+    R9 = R9 + R10;
+    R10 = 2;
+    COMP(R13, R10);
+    IF EQ R9 = PASS R14;
+    F2 = 1.0;                           // its rate x: 1, the tom's F15
+    R10 = 3;
+    COMP(R13, R10);
+    IF EQ F2 = PASS F15;
+    DM(VS_DEF, I3) = R9;
+    DM(VS_TUNE, I3) = F2;
+    R9 = R9 + R5;
+    I4 = R9;
     F8 = DM(DV_TLEV, I4);
     F8 = F8 * F7, F9 = DM(DV_NLEV, I4);
     F9 = F9 * F7, DM(VS_TE, I3) = F8;
@@ -265,12 +310,15 @@ h_loop:
     DM(VS_PE, I3) = F8;
 h_next:
     R11 = LSHIFT R11 BY -1;
+    F8 = PASS F7;                       // the levels turn: kick, snare, hat, then the kick's for the tom
     F7 = PASS F1;
     F1 = PASS F12;
+    F12 = PASS F8;
     MODIFY(I3, VW);
-    MODIFY(I4, DV_WORDS);
-    R13 = R13 - 1;
-    IF NE JUMP h_loop;
+    R13 = R13 + 1;
+    R10 = 4;
+    COMP(R13, R10);
+    IF LT JUMP h_loop;
     MODIFY(I3, -VEND);
 
     // ---- the noise (F2), held for HOLD samples
@@ -298,10 +346,9 @@ n_hold:
     F8 = 1.0;
     F2 = F2 - F8;
 
-    // ---- the voices: F3 = their sum; R13 = the voice, I3 its state, I4 its kit words
+    // ---- the voices: F3 = their sum; R13 = the voice, I3 its state, I4 its definition's words
     F14 = DM(DK_TDRIVE, I4);
     R15 = DM(DK_GATE, I4);
-    MODIFY(I4, DK_V0);
     MODIFY(I3, ST_V0);
     R3 = 0;
     R13 = 0;
@@ -312,6 +359,9 @@ v_loop:
     F10 = MAX(F8, F9);
     COMP(F10, F7);
     IF LT JUMP v_next;                  // silent: the voice has stopped
+    R10 = DM(VS_DEF, I3);
+    R10 = R10 + R5;
+    I4 = R10;
     F12 = F2 * F9;                      // u, the filter's input
     R10 = 2;
     COMP(R13, R10);
@@ -321,7 +371,8 @@ v_loop:
     F8 = F8 * F9, F9 = DM(DV_SWEEP, I4);
     F8 = F9 * F8, DM(VS_PE, I3) = F8;
     F9 = DM(DV_INC, I4);
-    F8 = F9 + F8, F9 = DM(VS_PH, I3);
+    F8 = F9 + F8, F9 = DM(VS_TUNE, I3);
+    F8 = F8 * F9, F9 = DM(VS_PH, I3);   // x tune: x 1 (exactly the same) but for the tom
     F9 = F9 + F8;
     F10 = 1.0;
     COMP(F9, F10);
@@ -399,15 +450,15 @@ v_filt:
     DM(VS_NE, I3) = F10;
 v_next:
     MODIFY(I3, VW);
-    MODIFY(I4, DV_WORDS);
     R13 = R13 + 1;
-    R10 = 3;
+    R10 = 4;
     COMP(R13, R10);
     IF LT JUMP v_loop;
     MODIFY(I3, -VEND);
 
-    // ---- the kit's drive, clip and level, Level, the input added (I4 = the kit's end)
-    F8 = DM(DK_DRIVE - DK_WORDS, I4);
+    // ---- the kit's drive, clip and level, Level, the input added
+    I4 = R5;
+    F8 = DM(DK_DRIVE, I4);
     F3 = F3 * F8;
     F8 = 1.0;
     F3 = CLIP F3 BY F8;
@@ -417,7 +468,7 @@ v_next:
     F9 = F9 * F3;
     F9 = F9 * F3;
     F9 = F9 * F3;
-    F3 = F8 - F9, F8 = DM(DK_COMP - DK_WORDS, I4);
+    F3 = F8 - F9, F8 = DM(DK_COMP, I4);
     F3 = F3 * F8, R7 = DM(I1, 1);       // x; not finite -> 0
     F3 = F3 * F4;
     R8 = 0x7F800000;

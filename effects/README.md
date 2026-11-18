@@ -246,3 +246,58 @@ A low, dark four-voice drone generator that ignores the guitar, made to feed the
 
 Knob words: DM(5) Key (int 0..11), DM(6) Pattern (int 0..8), DM(7) Rate, DM(8) Drift, DM(9) Warble,
 DM(10) Chug, DM(11) Tone (all 0..1), DM(13) Level (0..1).
+
+## Drum Chapel (`drumchapel/`)
+
+A drum machine block (an overlay on the mono Ratchet, tempo-synced; HANDOVER.md, "Five new overlay effects"). The
+guitar passes at exactly unity; four synthesised voices are added: kick, snare, hat and tom. Click's timing: an
+integer phase, so every sixteenth lands on its exact sample for ever; the first sample after reset is step 0.
+
+**Grooves.** Groove 0, **Classic**, is the 20 original one-bar patterns (Rock, Half-Time, ... Fill). Grooves 1..11
+are families of longer grooves converted from a folder of MIDI drum loops by `drumchapel/grooves.py FOLDER`, which
+writes `drumchapel/grooves_data.h`. That pack is licensed and this repository is public, so the file is git-ignored
+and must never be committed; no committed file names a loop or carries its notes. Without it (a fresh clone), the
+reference, tests, kernel check and image build all still work and every Groove plays the Classic patterns (as does
+a family the folder lacks). The converter quantises every hit to the nearest sixteenth, keeps each loop's whole
+length and meter (up to 384 sixteenths), drops ghost notes (velocity under 40) and maps the kit's notes to the
+voices (its docstring has the map: cymbals and open hats play the hat voice with the open decay; four tom pitches).
+
+**Knobs.** Time (the host delay's, synced to tap tempo), Groove (list: Classic + 11 families), Pattern ("1".."20":
+the Classic pattern, or the family's variation, Pattern mod its size), Kit (Boom, Punch, Tick, Bit, Doom, Eighty),
+Kick (also the toms' level), Snare, Hat, Swing (odd sixteenths late by up to a third), Level. Knob words: DM(5) Time
+s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..5), DM(8) Kick, DM(9) Snare, DM(10) Hat, DM(11) Swing,
+DM(13) Level (0..1), DM(14) Groove (int 0..11).
+
+**Playing a groove.** The step counter wraps at the groove's length. A step looks its groove up when it falls and
+continues at (step mod the new length), so Groove or Pattern changes mid-play never restart the count or move the
+timing. Every length is a multiple of four, so the swing's odd steps stay odd.
+
+**The bank** (`drumchapel_bank()`, the same words in the reference, the check and the image): 240 directory words
+(Groove x Pattern: first step << 9 | length), then the steps four to a word, one byte each: bit 0 kick, 1 snare,
+2 hat, 3 tom, 4 open (the hat voice plays the kit's open-hat definition), bits 5-6 the tom's pitch (high, mid, low,
+floor: x1, x0.8, x0.64, x0.5 the kit's tom rate). 3,247 words with the converted pack, 320 with Classic only. On
+the unit it sits inside Blob 0 in DDR2, right after Geiger's curves, and the kernel reads it only when a step falls
+(the directory word and one step word): it is never copied into the overlay region.
+
+**Kits.** Each kit is five voice definitions (kick, snare, closed hat, tom, open hat) plus its drive and clip, in
+`drumchapel.c`: Boom's toms long sines, Punch's swept with a tick, Tick's bongo-like, Bit's falling squares, Doom's
+tuned way down (floor ~28 Hz) and through its fuzz, Eighty's synth-drum sweeps, gated like its snare.
+
+**Tests** (`drumchapel/test_drumchapel.c`): Click's exact timing over ten minutes at six tempos; every Classic
+pattern's hits; swing; unity pass-through; the kits' character; block sizes and interleaved instances; hostile
+input and knobs; Classic **bit for bit as before the grooves** (hashes of all 20 patterns x 6 kits at two
+settings, recorded with the three-voice version); the bank's directory; every groove stepped past its length (each
+step its count mod the length, the hits its byte says, the wrap); a 29/4 groove for ten minutes; Groove and Pattern
+changes mid-play (the count continues, no step moves in time); the four tom pitches falling in every kit and silent
+at Kick 0; the open hat outlasting the closed one. The tests that need toms or open hats write their own short
+grooves into the bank, so they run without the converted data too.
+
+### Drum Chapel on the SHARC (`drumchapel/sharc/`)
+
+`drumchapel_kernel.asm`, checked by `drumchapel_kernel.py --check` (part of `make sharc-check`): every output word
+equal to the reference's for 13 fixed settings plus cases picked from the bank (grooves with each tom pitch and
+with open hats in their first steps), two instances with every knob moving, a re-created block; then a long run
+through a whole 13/4 groove past its wrap with Groove, Pattern and Kit changed mid-play. The bank is loaded into the
+simulator at `BANK_CHECK` (kernel_rig's `spec.ext`); the image build puts it in Blob 0 and assembles the kernel
+for that address (`place_bank`). 451 instructions, 398 data words (2 slots), worst 6,620 cycles per 16-sample call
+in ssim (the three-voice version: 409, 296, 5,345).

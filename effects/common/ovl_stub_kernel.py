@@ -380,6 +380,7 @@ class Flow:
             all_syms.update(spec.assemble(kplace)[2])
         self.pm_view = (code48, ninsn)
         self.garbage = [(cfg['data0'], cfg['data0'] + ndata)]
+        self.ext = [e for _, spec, _, _ in self.members for e in getattr(spec, 'ext', [])]
         self.extra_writes = [w for _, spec, _, _ in self.members for w in getattr(spec, 'extra_writes', [])] + [
             (cfg['data0'], cfg['data0'] + ndata), (cfg['code_n'], cfg['code_n'] + ninsn * 3 // 2), (sdata[0], sdata[1]),
             (src, src + len(words))]
@@ -391,7 +392,7 @@ def check_interleaved(members, cases_of, rnd_knobs_of, seconds, place):
     flows = [Flow(m[1], m[0], members) for m in members]
     s, secs, syms, end, sdata = flows[0].assemble(place)
     for f in flows[1:]:
-        f.pm_view, f.garbage, f.extra_writes = flows[0].pm_view, flows[0].garbage, flows[0].extra_writes
+        f.pm_view, f.garbage, f.extra_writes, f.ext = flows[0].pm_view, flows[0].garbage, flows[0].extra_writes, flows[0].ext
     rig = kr.Rig(flows[0], secs, syms)
     refs = [kr.Reference(f) for f in flows]
     nblk, total = int(seconds * kr.SR) // 16, 0

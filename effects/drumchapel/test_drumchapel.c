@@ -64,6 +64,122 @@ static double bright(const float *x, size_t n)            /* rms of the first di
 
 #define MS(t) ((size_t)((t) * 48))
 
+/* Classic before the grooves (Groove 0 must sound exactly as it did): FNV-1a of every output word, recorded with the
+   three-voice version (git be3ced3) for [setting][pattern][kit]; setting 0: Time 0.37, Kick 0.9, Snare 0.6, Hat 0.7,
+   Swing 0.4, Level 0.8, 3 s; setting 1: Time 0.2, all 1, Swing 0, 2 s; input sig_noise(seed 3, 0.3). */
+static const uint32_t OLD[2][20][6] = {
+  {
+    { 0x18678238u, 0x1d7d1eb6u, 0x4dd8374du, 0x60516ba7u, 0x0c295bb3u, 0x42773405u, },
+    { 0x53f64e4eu, 0x64a7b7e9u, 0x67060b06u, 0x3c22a967u, 0x6fa4c8f9u, 0x0c2f2956u, },
+    { 0x9de99de7u, 0x40d02454u, 0x2e55306du, 0x5caa0d50u, 0x65baa448u, 0xa9855141u, },
+    { 0xce1b7604u, 0x550f6a8cu, 0x1ccd2102u, 0xb69b3f42u, 0x1d8ce3e9u, 0x504cfc99u, },
+    { 0xca22bfb7u, 0x4ce8ee3cu, 0x0a140870u, 0x3199e40cu, 0x3f7f8118u, 0x3fad49e7u, },
+    { 0x3aa691edu, 0x246d6bd3u, 0xb58d34d8u, 0x259436efu, 0x874e93c1u, 0x08d21cf7u, },
+    { 0x27c1554au, 0x418314b0u, 0xac775db2u, 0x94ebd823u, 0xa0cafedau, 0xea788792u, },
+    { 0x0d6554beu, 0x22decbb3u, 0x63e42ee0u, 0x864c150fu, 0xbdb3294fu, 0x18a1be7bu, },
+    { 0xb15f5490u, 0xe75ce973u, 0x130be5ffu, 0xdb21edd7u, 0x58ad3ec2u, 0x9b68d377u, },
+    { 0x539013feu, 0x42f9ac7du, 0xa4041fadu, 0xe1c41c0bu, 0xf7d28f98u, 0xcb06833bu, },
+    { 0xfea999ecu, 0xe34c9960u, 0x190af176u, 0xf98c184eu, 0xba10c236u, 0xca79ce00u, },
+    { 0xe451b551u, 0x157b34a3u, 0x16d31449u, 0x890a862eu, 0x96a80d29u, 0xd5a73876u, },
+    { 0x1e70d2e0u, 0xe57da250u, 0xb33cf1c9u, 0x9fa92eb6u, 0xf765b1fdu, 0x57337a6bu, },
+    { 0xb37b208cu, 0x5aea4aa2u, 0xc8c7087au, 0xb2254608u, 0xc8294f48u, 0xecfcfeabu, },
+    { 0xd07af29fu, 0x221fe9a2u, 0x48f7ddd3u, 0xcad2a111u, 0x480b8a3au, 0x53a26511u, },
+    { 0x969a3f3fu, 0x5d7eab03u, 0xcb3a17e3u, 0x57a8c3f7u, 0x121a6a93u, 0x76aff265u, },
+    { 0x52ce3574u, 0xc0e57e90u, 0x4683ae24u, 0x02ee837bu, 0x9f38c5fbu, 0x806cdbe8u, },
+    { 0x9799a095u, 0x4dd00195u, 0x224b7793u, 0x84526ed3u, 0xc2c6f691u, 0xd676d5c1u, },
+    { 0x433908eeu, 0xa9db0e28u, 0x19c8d29cu, 0x2a0ac0b6u, 0x5c7cd2fcu, 0xeeb53f0du, },
+    { 0x9aceb4d0u, 0x25a56c71u, 0x9ddf7da4u, 0x2a6b06a8u, 0x49246170u, 0x9dfa6b10u, },
+  }, {
+    { 0xe33ab80du, 0x0c18e2b7u, 0xac159b33u, 0xa401e276u, 0x424dd2f0u, 0xfa1d5b41u, },
+    { 0x6111ce08u, 0xf2307373u, 0xef563014u, 0xf6ee8218u, 0x9cfd5ab4u, 0x8cd98a30u, },
+    { 0xe5d3653eu, 0x68b506ceu, 0x6e8f81deu, 0x37067917u, 0xde8244b4u, 0x92e5c9dbu, },
+    { 0xf2011598u, 0xa095ff8au, 0xfbab3aacu, 0x0444e9fdu, 0xa8c4a1d9u, 0x4d0d0b3eu, },
+    { 0x04601f7du, 0x549187adu, 0xbdfa1756u, 0x96e6be14u, 0x2ac6b60cu, 0x923c60a3u, },
+    { 0xf6e932c3u, 0xa6171b58u, 0x74814688u, 0x76c187f8u, 0xb5e535eau, 0x0caceefdu, },
+    { 0x042b7adbu, 0x28f4d507u, 0xf4c1f043u, 0x913ea3f5u, 0x6ecc3ca6u, 0xf7031735u, },
+    { 0x4394d718u, 0xd5ad5142u, 0x78f182a9u, 0x7dc218e7u, 0x3a283b3fu, 0x31275430u, },
+    { 0x0b7168ecu, 0x367f5e4cu, 0x97d10b79u, 0xba39b087u, 0x567c700au, 0x15522317u, },
+    { 0xa0d19ec4u, 0xaaa15ba1u, 0x31c73c99u, 0xb3c01d98u, 0x2b0c965fu, 0x0952d89du, },
+    { 0x4be57609u, 0x5fa69ebbu, 0xf70daa26u, 0xb16ed8bcu, 0xd6aba63eu, 0x0edc0e2du, },
+    { 0xbfa0c3abu, 0xfba97d1cu, 0x938cbb52u, 0x3e5050e9u, 0x2d3cfab9u, 0xeb3d0131u, },
+    { 0x21e09f2au, 0xa284c5eau, 0x4fdfb406u, 0xaf5b1ab7u, 0xcdfa816fu, 0x22e67e86u, },
+    { 0x61963abcu, 0xab53fc67u, 0xc4eeaa86u, 0xc08a819eu, 0xf82b0f25u, 0x3fbc944au, },
+    { 0xe95a7118u, 0xf5424d09u, 0x75488238u, 0xb5d17630u, 0x07a986a6u, 0x773137b7u, },
+    { 0x1432ff10u, 0x66d0357bu, 0xdb06b22au, 0xa382a98eu, 0xcfe4e7c3u, 0xafdfcafau, },
+    { 0x5e53cfa0u, 0xa80ba960u, 0xc6530acbu, 0x9a5b3ed2u, 0x33891e9fu, 0x1f8cfb0bu, },
+    { 0x48951e55u, 0x18d86844u, 0xaef859d7u, 0xf783d172u, 0x6b1baef5u, 0xdaeed9c6u, },
+    { 0xe6201602u, 0x3a3f97f4u, 0x2e173aebu, 0x9bd54730u, 0x4e173864u, 0x909b1767u, },
+    { 0x5d5722a4u, 0x5f0ab276u, 0x14a3c7b4u, 0x01728aa2u, 0xb4734e1du, 0x59fa3ff5u, },
+  }
+};
+
+static uint32_t fnv(const float *y, size_t n)
+{
+    uint32_t h = 2166136261u, u;
+    size_t i;
+    int b;
+    for (i = 0; i < n; i++) {
+        memcpy(&u, &y[i], 4);
+        for (b = 0; b < 4; b++) { h ^= (u >> (8 * b)) & 255u; h *= 16777619u; }
+    }
+    return h;
+}
+
+/* The tests' own grooves, written into the bank in place (the bank is the reference's static table; restored by
+   unpoke). A groove of `len` steps starting at step 0 of the bank (the Classic area), its bytes `b` (repeated). */
+static uint32_t SAVED[8192];
+static uint32_t bank_n;
+
+static void poke(int groove, int pattern, uint32_t len, const uint32_t *b, uint32_t nb)
+{
+    uint32_t *bank = (uint32_t *)drumchapel_bank(&bank_n), i;
+    if (bank_n <= sizeof SAVED / sizeof SAVED[0]) memcpy(SAVED, bank, bank_n * 4);
+    bank[groove * DRUMCHAPEL_PATTERNS + pattern] = 0u << 9 | len;
+    for (i = 0; i < len; i++) {
+        uint32_t *w = &bank[DRUMCHAPEL_DIR_WORDS + i / 4];
+        *w = (*w & ~(0xFFu << (8 * (i % 4)))) | (b[i % nb] & 0xFFu) << (8 * (i % 4));
+    }
+}
+
+static void unpoke(void)
+{
+    memcpy((uint32_t *)drumchapel_bank(NULL), SAVED, bank_n * 4);
+}
+
+static void setg(FxParams *p, float time, int groove, int pattern, int kit, float kick, float snare, float hat)
+{
+    memset(p, 0, sizeof *p);
+    p->value[DC_TIME] = time; p->value[DC_GROOVE] = (float)groove; p->value[DC_PATTERN] = (float)pattern;
+    p->value[DC_KIT] = (float)kit; p->value[DC_KICK] = kick; p->value[DC_SNARE] = snare; p->value[DC_HAT] = hat;
+    p->value[DC_LEVEL] = 1.0f;
+}
+
+/* Run a groove for `nsteps` steps at block size 16 (at most one step falls in a block); every step must be
+   (its count mod the length), with the hits its byte says. Returns the number of wrong steps. */
+static int walk(const FxParams *p, int groove, int pattern, uint32_t nsteps)
+{
+    static float in[16], out[16];
+    DrumChapelState s;
+    uint32_t len = drumchapel_groove_len(groove, pattern), f = 0, wraps = 0;
+    int wrong = 0, v;
+    fx_drumchapel.reset(&s, SR);
+    while (s.fires < nsteps) {
+        uint32_t h[DRUMCHAPEL_VOICES], o = s.opens;
+        for (v = 0; v < DRUMCHAPEL_VOICES; v++) h[v] = s.hits[v];
+        fx_drumchapel.process(&s, p, in, out, 16);
+        if (s.fires == f) continue;
+        if (s.fires != f + 1) wrong++;
+        f = s.fires;
+        if (s.last_step != (f - 1) % len || s.last_byte != drumchapel_groove_step(groove, pattern, s.last_step)) wrong++;
+        if (s.last_step == 0 && f > 1) wraps++;
+        for (v = 0; v < DRUMCHAPEL_VOICES; v++)
+            if ((s.hits[v] != h[v]) != (int)(s.last_byte >> v & 1u)) wrong++;
+        if ((s.opens != o) != ((s.last_byte & (DC_B_HAT | DC_B_OPEN)) == (DC_B_HAT | DC_B_OPEN))) wrong++;
+    }
+    if (wraps != (nsteps - 1) / len) wrong++;
+    return wrong;
+}
+
 /* The samples at which steps fire, n samples at block size 1. */
 static size_t fire_times(const FxParams *p, uint32_t *t, uint32_t *stepv, size_t max, size_t n)
 {
@@ -93,8 +209,15 @@ int main(void)
     /* patterns: names short, step words as the tables say */
     for (pat = 0; pat < DRUMCHAPEL_PATTERNS; pat++)
         CHECK(strlen(drumchapel_pattern_name(pat)) <= 10, "pattern name %s", drumchapel_pattern_name(pat));
-    CHECK(drumchapel_pattern_ks(0) == (0x0501u | 0x1010u << 16) && drumchapel_pattern_hat(0) == 0x5555u,
-          "Rock is %#x / %#x", drumchapel_pattern_ks(0), drumchapel_pattern_hat(0));
+    {
+        uint32_t km = 0, sm = 0, hm = 0;
+        for (k = 0; k < 16; k++) {
+            uint32_t b = drumchapel_groove_step(0, 0, (uint32_t)k);
+            km |= (b & 1u) << k; sm |= (b >> 1 & 1u) << k; hm |= (b >> 2 & 1u) << k;
+        }
+        CHECK(km == 0x0501u && sm == 0x1010u && hm == 0x5555u && drumchapel_groove_len(0, 0) == 16,
+              "Rock is %#x / %#x / %#x", km, sm, hm);
+    }
 
     /* 1. timing exactly Click's at four sixteenths a beat: the same samples, for ten minutes, at five tempos */
     {
@@ -135,10 +258,11 @@ int main(void)
 
     /* 2. every pattern's hits land on its steps: two bars, each voice's hits counted per step */
     for (pat = 0; pat < DRUMCHAPEL_PATTERNS; pat++) {
-        uint32_t ks = drumchapel_pattern_ks(pat), hw = drumchapel_pattern_hat(pat), m[3];
+        uint32_t m[3] = { 0, 0, 0 };
         static float in1[1], out1[1];
         int wrong = 0;
-        m[KICK] = ks & 0xFFFFu; m[SNARE] = ks >> 16; m[HAT] = hw;
+        for (k = 0; k < 16; k++)
+            for (v = 0; v < 3; v++) m[v] |= (drumchapel_groove_step(0, pat, (uint32_t)k) >> v & 1u) << k;
         set(&p, 0.25f, pat, 0, 1, 1, 1, 0, 0.5f);
         fx_drumchapel.reset(&s, SR);
         for (i = 0; i < 2 * 16 * 3000; i++) {
@@ -288,7 +412,8 @@ int main(void)
     for (kit = -1; kit < 3; kit++) {
         float hv = kit == -1 ? 1e9f : kit == 0 ? -1e9f : kit == 1 ? NAN : 0.5f;
         set(&p, hv, (int)hv, (int)hv, hv, hv, hv, hv, hv);
-        if (kit == 1) for (i = 0; i < 8; i++) p.value[i] = NAN;
+        p.value[DC_GROOVE] = hv;
+        if (kit == 1) for (i = 0; i < DC_NPARAMS; i++) p.value[i] = NAN;
         render(&s, &p, x, y, N, 16);
         for (i = 0, bad = 0; i < N; i++) {
             float in = isfinite(x[i]) ? x[i] : 0.0f;
@@ -302,9 +427,9 @@ int main(void)
         fx_drumchapel.reset(&s, SR);
         for (i = 0, bad = 0; i < N; i += 16) {
             if (i % 480 == 0) {
-                for (k = 0; k < 8; k++) { r = r * 1103515245u + 12345u; p.value[k] = (float)(r >> 8) / 16777216.0f * 1.4f - 0.2f; }
+                for (k = 0; k < DC_NPARAMS; k++) { r = r * 1103515245u + 12345u; p.value[k] = (float)(r >> 8) / 16777216.0f * 1.4f - 0.2f; }
                 p.value[DC_TIME] = 0.05f + p.value[DC_TIME] * 3.0f;
-                p.value[DC_PATTERN] *= 20.0f; p.value[DC_KIT] *= 6.0f;
+                p.value[DC_PATTERN] *= 20.0f; p.value[DC_KIT] *= 6.0f; p.value[DC_GROOVE] *= 12.0f;
             }
             fx_drumchapel.process(&s, &p, x + i, y + i, 16);
             for (k = 0; k < 16; k++) {
@@ -313,6 +438,170 @@ int main(void)
             }
         }
         CHECK(bad == 0, "moving knobs: %d bad samples", bad);
+    }
+
+
+    /* 8. Classic (Groove 0) exactly as before the grooves, every pattern and kit at two settings */
+    {
+        static const float S[2][7] = { { 0.37f, 0.9f, 0.6f, 0.7f, 0.4f, 0.8f, 3 }, { 0.2f, 1, 1, 1, 0, 1, 2 } };
+        int set_, diff = 0;
+        sig_noise(x, N, 3, 0.3f);
+        for (set_ = 0; set_ < 2; set_++)
+            for (pat = 0; pat < 20; pat++)
+                for (kit = 0; kit < DRUMCHAPEL_KITS; kit++) {
+                    n = (size_t)(S[set_][6] * 48000);
+                    set(&p, S[set_][0], pat, kit, S[set_][1], S[set_][2], S[set_][3], S[set_][4], S[set_][5]);
+                    render(&s, &p, x, y, n, 16);
+                    if (fnv(y, n) != OLD[set_][pat][kit]) diff++;
+                }
+        CHECK(diff == 0, "Classic differs from the three-voice version in %d of 240 renders", diff);
+        memset(x, 0, N * sizeof *x);
+    }
+
+    /* 9. the bank: its directory, Classic, the families (Pattern = variation mod the family's size) */
+    {
+        uint32_t nw, total, g, bad9 = 0;
+        const uint32_t *bank = drumchapel_bank(&nw);
+        total = (nw - DRUMCHAPEL_DIR_WORDS) * 4;
+        for (g = 0; g < DRUMCHAPEL_GROOVES; g++) {
+            int fs = drumchapel_family_size((int)g);
+            for (pat = 0; pat < DRUMCHAPEL_PATTERNS; pat++) {
+                uint32_t d = bank[g * DRUMCHAPEL_PATTERNS + pat], len = d & 511u, first = d >> 9;
+                if (len < 16 || len > DRUMCHAPEL_MAX_STEPS || len % 4 || first + len > total) bad9++;
+                if (g == 0 && d != ((uint32_t)pat * 16u << 9 | 16u)) bad9++;
+                if (g > 0 && fs == 0 && d != bank[pat]) bad9++;                       /* missing: Classic */
+                if (g > 0 && fs > 0 && (fs > 20 || d != bank[g * DRUMCHAPEL_PATTERNS + pat % fs])) bad9++;
+                if (g > 0 && fs > 0 && pat < fs && d == bank[pat]) bad9++;            /* a family's own steps */
+            }
+        }
+        CHECK(bad9 == 0, "bank directory: %u bad entries", bad9);
+        printf("  bank: %u words (%u directory), %d of 11 families converted%s\n", nw, DRUMCHAPEL_DIR_WORDS,
+               drumchapel_families(), drumchapel_families() ? "" : " (grooves_data.h missing: Classic only)");
+    }
+
+    /* 10. every groove: each step is (count mod length), its hits as its byte says, the wrap at the length */
+    {
+        int g, bad10 = 0, ng = 0;
+        for (g = 0; g < DRUMCHAPEL_GROOVES; g++) {
+            int fs = drumchapel_family_size(g);
+            for (pat = 0; pat < (fs ? fs : (g ? 0 : 20)); pat++) {
+                uint32_t len = drumchapel_groove_len(g, pat);
+                setg(&p, 0.1f, g, pat, 0, 1, 1, 1);
+                p.value[DC_SWING] = (float)(pat % 3) * 0.5f;
+                bad10 += walk(&p, g, pat, len + len / 2 + 3);
+                ng++;
+            }
+        }
+        CHECK(bad10 == 0, "grooves: %d wrong steps over %d grooves", bad10, ng);
+    }
+
+    /* 11. a long groove of an odd meter (29/4, 116 sixteenths) for ten minutes: every step on its sample, count mod 116 */
+    {
+        static const uint32_t bytes[5] = { 1, 4, 2 | 4, 8 | 2 << DC_B_PITCH, 4 | 16 };
+        static float b1[16], b2[16];
+        uint32_t inc = click_bpm100(0.4379562f) * 4u;
+        size_t late = 0;
+        poke(11, 19, 116, bytes, 5);
+        setg(&p, 0.4379562f, 11, 19, 2, 1, 1, 1);
+        fx_drumchapel.reset(&s, SR);
+        for (i = 0; i < (size_t)(600 * 48000); i += 16) {
+            size_t j;
+            for (j = 0; j < 16; j++) {
+                uint32_t b = s.fires;
+                fx_drumchapel.process(&s, &p, b1 + j, b2 + j, 1);
+                if (s.fires != b) {
+                    uint64_t f = s.fires - 1, nn = i + j;
+                    if (!(nn * inc >= f * DRUMCHAPEL_PERIOD && (nn == 0 || (nn - 1) * inc < f * DRUMCHAPEL_PERIOD))) late++;
+                    if (f % 116u != s.last_step || s.last_byte != bytes[s.last_step % 5]) late++;
+                }
+            }
+        }
+        CHECK(late == 0 && s.fires > 5000, "29/4 groove, ten minutes: %zu wrong of %u steps", late, s.fires);
+        unpoke();
+    }
+
+    /* 12. Groove and Pattern changes mid-play: the step continues (mod the new length), the timing never moves */
+    {
+        static const uint32_t bytes[1] = { 1 };
+        static float in1[16], out1[16];
+        static uint32_t ts[400], tr[400];
+        DrumChapelState r;
+        FxParams a, b;
+        uint32_t prev = 0, at38 = 99, bad12 = 0;
+        poke(11, 19, 116, bytes, 1);
+        setg(&a, 0.25f, 0, 3, 0, 1, 1, 1);          /* Classic, 16 steps */
+        setg(&b, 0.25f, 11, 19, 0, 1, 1, 1);        /* 116 steps */
+        fx_drumchapel.reset(&s, SR);
+        fx_drumchapel.reset(&r, SR);
+        /* s: Classic for steps 1..37, the long groove for 38..141, Classic again; r: Classic throughout */
+        for (i = 0; s.fires < 400; i += 16) {
+            uint32_t f = s.fires, g = r.fires;
+            fx_drumchapel.process(&s, s.fires < 37 ? &a : s.fires < 141 ? &b : &a, in1, out1, 16);
+            fx_drumchapel.process(&r, &a, in1, out1, 16);
+            if (r.fires != g && r.fires <= 400) tr[r.fires - 1] = (uint32_t)i;
+            if (s.fires == f) continue;
+            ts[s.fires - 1] = (uint32_t)i;
+            if (s.fires == 38) at38 = s.last_step;
+            else if (s.fires > 1 && s.last_step != (prev + 1) % (s.fires >= 39 && s.fires <= 141 ? 116u : 16u)) bad12++;
+            prev = s.last_step;
+        }
+        /* step 37 of Classic is 36 mod 16 = 4, so the long groove starts at 5; its step 108 (fire 141) hands Classic 109 mod 16 */
+        CHECK(at38 == 5 && bad12 == 0, "groove change: the long groove started at step %u, %u steps wrong", at38, bad12);
+        for (k = 0, bad = 0; k < 400; k++) bad += ts[k] != tr[k];
+        CHECK(bad == 0, "a groove change moved %d steps in time", bad);
+        unpoke();
+        /* a Pattern change inside a family (Classic when the family is missing) keeps the count too */
+        setg(&a, 0.2f, 1, 0, 0, 1, 1, 1);
+        b = a; b.value[DC_PATTERN] = 1;
+        fx_drumchapel.reset(&s, SR);
+        for (prev = 0, bad12 = 0; s.fires < 3 * 16 + 9;) {
+            uint32_t f = s.fires;
+            fx_drumchapel.process(&s, s.fires < 21 ? &a : &b, in1, out1, 16);
+            if (s.fires == f) continue;
+            if (s.fires > 1 && s.last_step != (prev + 1) % drumchapel_groove_len(1, s.fires <= 21 ? 0 : 1)) bad12++;
+            prev = s.last_step;
+        }
+        CHECK(bad12 == 0, "pattern change: %u wrong steps", bad12);
+    }
+
+    /* 13. toms: four pitches, high to floor at the kit's ratios, at the Kick knob's level; open hats ring on */
+    {
+        double hz[4];
+        int t, kt;
+        for (kt = 0; kt < DRUMCHAPEL_KITS; kt++) {
+            for (t = 0; t < 4; t++) {
+                uint32_t b = DC_B_TOM | (uint32_t)t << DC_B_PITCH;
+                poke(11, 19, 16, &b, 1);
+                setg(&p, 4.0f, 11, 19, kt, 1, 0, 0);         /* one tom hit (Time 4 s: the next a second later) */
+                render(&s, &p, x, y, MS(1000), 16);
+                /* Doom's fuzz and noise: wait for the noise to die */
+                hz[t] = (kt == KIT_DOOM ? zcr(y + MS(400), MS(500)) : zcr(y + MS(40), MS(200))) * 48000.0 / 2.0;
+                CHECK(s.hits[TOM] == 1 && s.hits[KICK] == 0 && peak(y, MS(400)) > 0.05, "%s tom %d: %u hits, peak %g",
+                      drumchapel_kit_name(kt), t, s.hits[TOM], peak(y, MS(400)));
+                setg(&p, 4.0f, 11, 19, kt, 0, 1, 1);         /* Kick 0: the toms silent */
+                render(&s, &p, x, y, MS(400), 16);
+                CHECK(peak(y, MS(400)) == 0.0, "%s tom %d sounds with Kick at 0", drumchapel_kit_name(kt), t);
+                unpoke();
+            }
+            printf("  %-6s toms %.0f / %.0f / %.0f / %.0f Hz\n", drumchapel_kit_name(kt), hz[0], hz[1], hz[2], hz[3]);
+            if (kt != KIT_BIT)
+                CHECK(hz[0] > hz[1] && hz[1] > hz[2] && hz[2] > hz[3] && fabs(hz[3] / hz[0] - 0.5) < 0.12,
+                      "%s toms not falling: %g %g %g %g", drumchapel_kit_name(kt), hz[0], hz[1], hz[2], hz[3]);
+        }
+        /* the open hat (any cymbal) outlasts the closed one, in every kit */
+        for (kt = 0; kt < DRUMCHAPEL_KITS; kt++) {
+            double e[2];
+            for (t = 0; t < 2; t++) {
+                uint32_t b = DC_B_HAT | (t ? DC_B_OPEN : 0u);
+                poke(11, 19, 16, &b, 1);
+                setg(&p, 4.0f, 11, 19, kt, 1, 1, 1);
+                render(&s, &p, x, y, MS(400), 16);
+                e[t] = kt == KIT_DOOM ? rms(y + MS(300), MS(60)) : rms(y + MS(80), MS(60));   /* Doom: past the clipping */
+                CHECK(s.hits[HAT] == 1 && s.opens == (uint32_t)t, "%s hat %d: %u hits, %u open", drumchapel_kit_name(kt), t, s.hits[HAT], s.opens);
+                unpoke();
+            }
+            CHECK(e[1] > 4.0 * e[0] && e[1] > 1e-3, "%s: open hat %g some way into the hit, closed %g", drumchapel_kit_name(kt), e[1], e[0]);
+        }
     }
 
     printf("%d checks, %d failures\n", checks, failures);

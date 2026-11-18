@@ -398,7 +398,7 @@ SHARC kernel checked bit for bit in ssim (effects/<dir>, `make -C effects test`,
 |---|---|---|---|---|---|
 | Pure Whitey | purewhitey | Tycoctavia Fuzz | 0x2aac | 421 / 151 / 2,547 | Mandala-style sampler, 8 modes; 1 slot; 4,096-word ring (16-bit pairs at 24 kHz = 0.34 s) in DDR2 |
 | Greasy Strangler | greasy | Boctaver | 0x2ab6 | 398 / 128 / 2,788 | Corrupt's tracker + Doom Chug's drone; holds the last note |
-| Drum Chapel | drumchapel | Ratchet (tempo sync) | 0x23ac | 409 / 296 / 5,345 | Click's timing; 20 patterns, 6 kits (Boom, Punch, Tick, Bit, Doom, Eighty) |
+| Drum Chapel | drumchapel | Ratchet (tempo sync) | 0x23ac | 451 / 398 / 6,620 | Click's timing; Classic (20 patterns) + 11 converted groove families, 4 voices, 6 kits (Boom, Punch, Tick, Bit, Doom, Eighty); was 409 / 296 / 5,345 before the grooves |
 | Bethblahem | bethblahem | Twin Harmony | 0x0833 | 399 / 80 / 3,535 | low theremin, Octave 0..-4, Growl, Sub; 6 Hz high-pass + limiter |
 | Puggy Puncher | puggy | Sweep Echo (tempo sync) | 0x045e | 377 / 133 / 2,627 | slot-machine glitch per step; Seed repeats a bar |
 
@@ -416,10 +416,42 @@ Risks on the unit: the compacted Blob 0 layout (passes sharc_blob0_check) and se
 On the unit (2026‑11‑18): all five play; the compacted Blob 0 and seven overlays in one stub boot and run. The one
 fault was that **Drum Chapel ignored its footswitch**: Ratchet's metadata says `followEnable` and `loadBypassed`
 (type `special`), as the stock generators (3 Note Generator, 4 OSC Generator) and Stutter Edit/Poly Sustain have: the
-unit keeps such a block running and hands the DSP its on/off state, so a drum generator kept playing. Drum Chapel's
-model now drops both fields and is type `digital` (EFFECTS `meta_drop`/`meta_type`, patch_amp.add_model_entry3
-`meta_drop`; verify_all checks it). Only Entry 3 changed (image 15fd1c5d…, full + preamps); flashed and booted,
-footswitch not yet re-tested. No other host has those fields. **Check any future host's metadata for them.**
+unit keeps such a block running and hands the DSP its on/off state, so a drum generator kept playing. Dropping the
+Entry 3 fields alone (image 15fd1c5d…) changed nothing: the ARM has its own copy, **Entry 0 Table 2 word 36** (byte
+36 of the 44-byte row), 1 for exactly the 15 followEnable models and 0 for the other 762. Drum Chapel now has both
+cleared (EFFECTS `meta_drop`/`meta_type`; patch_amp.add_model_entry3 `meta_drop`, takeover_entry0_effects
+`follow_enable`; verify_all checks both for every effect). Image d4e82c58… (full + preamps) differs from 15fd1c5d…
+in that one byte. **That did not fix it either** (on the unit, 2026‑11‑18). What did (user confirmed the footswitch
+works): (1) the browser item's first byte is the **block type**, which the takeover keeps: 0x08 an ordinary delay,
+0x18 Ratchet/Tesselator/Poly Sustain/Feedback Sim/Poly Pitch, 0x17 the synth generators, 0x16 loopers, 0x13..0x15
+IRs; Drum Chapel's is now 0x08. (2) The app also names its special delays in code (`movw rX, #0x789` for Mono
+Ratchet at 0x280bd8de, 0x280f41c0, 0x280f612c, next to Tesselator, Poly Sustain...); those three now compare with
+0xffff, and the routine at 0x280bd8a4 needs both (type 8 *and* not on the list). `tools/special_delay_patch.py`
+(`patch_e0`), called by build_all for EFFECTS `plain_delay`; verify_all checks both. The Entry 3 and Table 2 changes
+stay (harmless, consistent). **For any future host, check its block type and whether its name index is in those
+lists.**
+
+**Drum Chapel grooves (2026‑11‑18, not yet on the unit).** A new knob **Groove** (instance word 14, display slot 2;
+Pattern became a plain "1".."20" list in slot 3): 0 = Classic (the 20 patterns, bit for bit as before, the
+default), 1..11 = families of longer grooves (Doublerino, Fake 1st, Proggy 13/4, Crazy 14/4, Antibeat, Free Beat,
+Chaos 29/4, Dum Dum, Dam Dam, Tomapalooza, Tomathon) converted from a commercial MIDI loop pack by
+`effects/drumchapel/grooves.py FOLDER` into `effects/drumchapel/grooves_data.h`. **That file is git-ignored and must
+never be committed** (the repo is public); no committed file names a loop or holds its notes. Without it every
+Groove plays Classic and everything still builds and checks. Each groove keeps its full length and meter (up to 384
+sixteenths), quantised to sixteenths; the step counter wraps at its length, and a Groove/Pattern change continues at
+(step mod the new length). A fourth voice, Tom (four pitches, at the Kick knob's level, designed per kit), and an
+open-hat/cymbal decay on the hat voice. The pattern data is a read-only bank in DDR2 inside Blob 0, right after
+Geiger's curves (3,247 words with the pack, 320 without; manifest `overlay.grooves`), read by the kernel only when a
+step falls (two words a sixteenth), never swapped into the overlay region; build_all places it before laying out the
+overlay payload and assembles the kernel for its address (`drumchapel_kernel.place_bank`), verify_all checks the
+words in Blob 0. Details: `effects/README.md`, "Drum Chapel". verify_all now expects each effect's own instance
+words (Drum Chapel's map writes 5..11, 13 and 14). Risks for the unit test: the first overlay that reads DDR2 it
+did not write (overlay DDR2 access itself is proven by Ottobit's and Pure Whitey's rings) and the first use of word
+14 by an overlay host (NAM uses 15 on its own host); 9 knobs on a Ratchet host (8 before); list labels up to 11
+characters ("Proggy 13/4", "Tomapalooza"); Drum Chapel's swap is 678 + 398 = 1,076 words (was 615 + 296), and its
+398 data words are now the overlay region's largest (Ottobit's 316 before). Image: `build.py full --quick` ->
+`build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf`, MD5 09732d36f865985d41f4ee0d818bea8d, verified ALL OK (bank at DDR2
+0x294839), with the pack converted; not flashed.
 
 ## Don'ts
 

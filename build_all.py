@@ -54,12 +54,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.join(HERE, 'tools')
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
           'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/probe/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc', 'effects/doomchug/sharc',
-          'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc', 'effects/bethblahem/sharc', 'effects/puggy/sharc'):
+          'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc', 'effects/drumchapel', 'effects/bethblahem/sharc',
+          'effects/puggy/sharc'):
     sys.path.insert(0, os.path.join(HERE, p))
 
 import build_click as bc  # noqa: E402
 import build_effects as be  # noqa: E402
 import build_nam_click as bnc  # noqa: E402
+import grooves as dc_grooves  # noqa: E402  (Drum Chapel's family names; the groove data itself is git-ignored)
 
 STOCK_MD5 = '7c2ebdf1bffb6bcc5f89dda97f91e40c'
 NAM_PRIM, CLICK_PRIM, GEIGER_PRIM = 0x9c75, 0x0128, 0x012e
@@ -175,15 +177,20 @@ DRUMCHAPEL_PATTERNS = ['Rock', 'Half-Time', 'Four Floor', 'Disco', 'Shuffle', 'M
                        'Bossa', 'One Drop', 'Punk', 'Blast', 'Sludge', 'Trap', 'Two-Step', 'Gallop', 'Hats Only',
                        'Kick Only', 'Fill']
 DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty']
-DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_params); the kernel reads words 5..11 and 13
-    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Pattern', 'Pattern', LIST, dict(enumerate(DRUMCHAPEL_PATTERNS)), 0),
-    (3, 7,  'HD2_FM4SynthOMatic', 'Wave', 'Kit', 'Kit', LIST, dict(enumerate(DRUMCHAPEL_KITS)), 0),
-    (4, 8,  'HD2_AmpLine6Clarity', 'Bass', 'Kick', 'Kick', 'percent', (0.0, 1.0), 0.8),
-    (5, 9,  'HD2_AmpLine6Clarity', 'Mid', 'Snare', 'Snare', 'percent', (0.0, 1.0), 0.7),
-    (6, 10, 'HD2_AmpLine6Clarity', 'Treble', 'Hat', 'Hat', 'percent', (0.0, 1.0), 0.5),
-    (7, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Swing', 'Swing', 'percent', (0.0, 1.0), 0.0),
-    (8, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
+# Groove 0 plays the 20 patterns above; 1..11 the families converted by effects/drumchapel/grooves.py (Classic when
+# its git-ignored output is missing), Pattern then the variation (mod the family's size)
+DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES]
+DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_params); the kernel reads words 5..11, 13, 14
+    (2, 14, 'HD2_TremoloPatternMono', 'Step1', 'Groove', 'Groove', LIST, dict(enumerate(DRUMCHAPEL_GROOVES)), 0),
+    (3, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Pattern', 'Pattern', LIST, {k: str(k + 1) for k in range(20)}, 0),
+    (4, 7,  'HD2_FM4SynthOMatic', 'Wave', 'Kit', 'Kit', LIST, dict(enumerate(DRUMCHAPEL_KITS)), 0),
+    (5, 8,  'HD2_AmpLine6Clarity', 'Bass', 'Kick', 'Kick', 'percent', (0.0, 1.0), 0.8),
+    (6, 9,  'HD2_AmpLine6Clarity', 'Mid', 'Snare', 'Snare', 'percent', (0.0, 1.0), 0.7),
+    (7, 10, 'HD2_AmpLine6Clarity', 'Treble', 'Hat', 'Hat', 'percent', (0.0, 1.0), 0.5),
+    (8, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Swing', 'Swing', 'percent', (0.0, 1.0), 0.0),
+    (9, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
 )
+assert len(DRUMCHAPEL_GROOVES) == 12
 PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
     (1, 5,  'HD2_FM4SynthOMatic', 'Wave', 'Mode', 'Mode', LIST,
      {0: 'Repeat', 1: 'Random', 2: 'Reverse', 3: 'Trigger', 4: 'Sq Trigger', 5: 'Square', 6: 'Up', 7: 'Down'}, 0),
@@ -221,8 +228,10 @@ EFFECTS = {
     'drumchapel': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayDrumChapel', display='Drum Chapel', cost=700, prim=0x23AC,
                        params=DRUMCHAPEL_PARAMS, entry='OVL_ENTRY_DRUMCHAPEL', sync=True,
                        # Ratchet is 'followEnable' (the unit keeps the block running and hands it the on/off state):
-                       # without these the footswitch bypasses Drum Chapel like any other delay (2026-11-18)
-                       meta_drop=('followEnable', 'loadBypassed'), meta_type='digital'),   # Click's timing; worst 5,345 cycles in ssim
+                       # dropped here and cleared in its Entry 0 Table 2 row (word 36), so the footswitch bypasses
+                       # Drum Chapel like any other delay (the Entry 3 field alone did not, 2026-11-18)
+                       meta_drop=('followEnable', 'loadBypassed'), meta_type='digital',
+                       plain_delay=True),   # block type 0x18 -> 0x08 and off the app's special-delay list (tools/special_delay_patch.py); what made the footswitch work on the unit   # Click's timing; grooves bank in Blob 0
     'purewhitey': dict(takeover='HD2_DistTycoctaviaFuzzMono', name='HD2_DistPureWhitey', display='Pure Whitey', cost=700, prim=0x2AAC,
                        params=PUREWHITEY_PARAMS, entry='OVL_ENTRY_PUREWHITEY'),   # worst 2,547 cycles in ssim; ring in DDR2
     # --probe: a diagnostic on Geiger's host instead of Geiger (effects/probe/sharc/probe_kernel.asm)
@@ -613,11 +622,21 @@ def main():
             curves = geiger_kernel.tables()
             assert len(curves) == GEIGER_CURVES_WORDS
             base = bnc.BLOB0_BASE + b0_len
-            o_words, ovl = ovl_stub_kernel.layout([m[:4] for m in ovl_stub_kernel.MEMBERS], base + len(curves))
-            pad = curves + o_words
+            dc_bank = []
+            if 'drumchapel' in overlays:                # Drum Chapel's grooves (read-only), right after the curves
+                dc = OVL_MODS['drumchapel']
+                dc_bank = dc.bank()
+                dc.place_bank(dc.SPEC, base + len(curves))   # the same spec object ovl_stub_kernel.MEMBERS holds
+                dc_at = base + len(curves)
+                print(f'[+] Drum Chapel grooves: {dc.families()} of 11 families converted'
+                      f'{"" if dc.families() else " (no grooves_data.h: the Groove knob plays Classic everywhere)"}; '
+                      f'bank {len(dc_bank)} words at DDR2 {dc_at:#x}')
+            o_words, ovl = ovl_stub_kernel.layout([m[:4] for m in ovl_stub_kernel.MEMBERS], base + len(curves) + len(dc_bank))
+            pad = curves + dc_bank + o_words
             geiger_kernel.EXT_CURVES = base
             ovl_stub_kernel.configure(**ovl)
-            print(f'[+] Entry 4: inside Blob 0 at DDR2 {base:#x}: Geiger\'s curves ({len(curves)} words), the overlays '
+            print(f'[+] Entry 4: inside Blob 0 at DDR2 {base:#x}: Geiger\'s curves ({len(curves)} words), '
+                  f'{f"Drum Chapel grooves ({len(dc_bank)} words), " if dc_bank else ""}the overlays '
                   f'({", ".join(f"{m["name"]} {m["n_code"]}+{m["n_data"]}" for m in ovl["members"])}); rings at {ring0:#x}')
         if k == 'probe':        # the magic word and the routine inside Blob 0, before the probe's own table copy
             import probe_kernel
@@ -684,8 +703,14 @@ def main():
         e0n, pid, _, hits = pa.takeover_entry0_effects(e0n, targets[k]['words'][2], EFFECTS[k]['display'],
                                                        short_name=EFFECTS[k].get('short', EFFECTS[k]['display']), dsp_cost=EFFECTS[k]['cost'],
                                                        n_params=len(params[k]), strip_title=None,
-                                                       n_display=len(params[k]) - 2 if EFFECTS[k].get('sync') else None)
+                                                       n_display=len(params[k]) - 2 if EFFECTS[k].get('sync') else None,
+                                                       follow_enable=False if 'followEnable' in EFFECTS[k].get('meta_drop', ()) else None)
         print(f'[+] Entry 0: {EFFECTS[k]["display"]} preset_id {pid}, browser slots {hits}, dsp_cost {EFFECTS[k]["cost"]}')
+        if EFFECTS[k].get('plain_delay'):           # a 'special' delay host (Ratchet): an ordinary delay, so its footswitch bypasses it
+            import special_delay_patch as sdp
+            e0n, sites = sdp.patch_e0(e0n)
+            print(f'[+] Entry 0: {EFFECTS[k]["display"]} is an ordinary delay (block type 0x08; name compares at '
+                  f'{", ".join(hex(va) for va, _ in sites[:3])} retargeted)')
     l6ia_bytes, _, _ = l6ia.rebuild_archive(l6ia_bytes, {0: e0n, 2: l6ia.swap32(e2_raw), 3: e3n, 4: e4n})
 
     # 6. Entry 2: the kernels, no shared byte, one hook each
@@ -758,6 +783,8 @@ def main():
         manifest['extras'] = extras
     if overlay:
         manifest['overlay'] = dict(ovl, meter=meter, ring0=ring0, rings=rings, curves=geiger_kernel.EXT_CURVES,
+                                   **({'grooves': dict(bank=dc_at, words=len(dc_bank), families=OVL_MODS['drumchapel'].families())}
+                                      if 'drumchapel' in overlays else {}),
                                    place=list(ovk[overlays[0]].places['b3']), names=overlays)
     manifest.update(blob0_words=blob0_words, checked=check)
     json.dump(manifest, open(manifest_path, 'w'), indent=1)
