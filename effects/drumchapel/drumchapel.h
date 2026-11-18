@@ -1,4 +1,5 @@
-/* drumchapel.h - "Drum Chapel": a basic drum machine block. An original algorithm; no vendor code or samples.
+/* drumchapel.h - "Drum Chapel": a basic drum machine block. An original algorithm; no vendor code. The Acoustic
+ * kit's kick and snare samples are converted locally from the user's own recordings and never committed.
  *
  * The guitar passes through at exactly unity (a non-finite input sample is replaced by 0); synthesised drums
  * are added. Four voices (kick, snare, hat, tom) play grooves of sixteenths, one byte a step (DC_B_*).
@@ -35,6 +36,17 @@
  *   kit    the four voices summed -> x DRIVE -> clip +-1 -> 1.5 z - 0.5 z^3 -> x COMP -> x Level.
  * The tom plays at the Kick knob's level.
  *
+ * Samples (the Acoustic kit, kit 6): a definition whose PD word is 0 is a sample (a synthesised one always has
+ * PD > 0); its INC word is the sample's first index in the sample table (drumchapel_samples), SWEEP its length.
+ * Acoustic's kick and snare are such definitions when samples_data.h exists (samples.py; git-ignored, the
+ * recordings are the user's); without it they are Punch's synthesised kick and snare. The table: 16-bit samples
+ * at 48 kHz, two to a word, sample i in word i / 2, its low half when i is even; a sample is q / 32768.
+ * A sampled voice plays sample[age] x TE (TE = the knob's level at the hit, no envelope) and stops at the
+ * sample's end (TE = 0). A retrigger while it sounds crossfades: the sounding hit keeps playing from its place
+ * (POS2) at a level (NE) that falls linearly to 0 in 64 samples (PE = NE / 64 a sample), beside the new one.
+ * Acoustic's DRIVE is low (0.25, COMP 1 / (1.5 x 0.25)): a full-scale sample passes the kit's clip and
+ * 1.5 z - 0.5 z^3 shaper untouched but for 2 % (0.2 dB) at its very peak.
+ *
  * Nine parameters (the host's knob words 5..11, 13, 14). Bit-exact on the SHARC port: no division, no
  * transcendental at run time, every table built once in double and rounded once, -ffp-contract=off.
  * The tables assume 48 kHz (the unit's rate) whatever reset() is given.
@@ -53,7 +65,9 @@ enum { DC_TIME, DC_PATTERN, DC_KIT, DC_KICK, DC_SNARE, DC_HAT, DC_SWING, DC_LEVE
 #define DRUMCHAPEL_GROOVES 12                /* the Groove knob: Classic and 11 families */
 #define DRUMCHAPEL_MAX_STEPS 384             /* the longest groove, sixteenths (24 bars of 4/4) */
 #define DRUMCHAPEL_DIR_WORDS (DRUMCHAPEL_GROOVES * DRUMCHAPEL_PATTERNS)
-#define DRUMCHAPEL_KITS 6
+#define DRUMCHAPEL_KITS 7
+#define DRUMCHAPEL_SYNTH_KITS 6              /* Boom..Eighty: every voice synthesised */
+#define DRUMCHAPEL_XF 64                     /* a sampled voice's retrigger crossfade, samples */
 #define DRUMCHAPEL_METAL 6
 #define DRUMCHAPEL_SEED 0x6D2B79F5u
 #define DRUMCHAPEL_PERIOD 288000000u          /* 48,000 x 60 x 100: a sixteenth, in BPM x 100 x 4 per sample */
@@ -62,7 +76,7 @@ enum { DC_TIME, DC_PATTERN, DC_KIT, DC_KICK, DC_SNARE, DC_HAT, DC_SWING, DC_LEVE
 
 enum { KICK, SNARE, HAT, TOM };                                   /* voices */
 enum { DEF_KICK, DEF_SNARE, DEF_HAT, DEF_TOM, DEF_OPEN };          /* a kit's voice definitions */
-enum { KIT_BOOM, KIT_PUNCH, KIT_TICK, KIT_BIT, KIT_DOOM, KIT_EIGHTY };
+enum { KIT_BOOM, KIT_PUNCH, KIT_TICK, KIT_BIT, KIT_DOOM, KIT_EIGHTY, KIT_ACOUSTIC };
 enum { TOM_HIGH, TOM_MID, TOM_LOW, TOM_FLOOR };
 
 /* A step's byte: one bit a voice (bit v = voice v), the hat open, the tom's pitch (TOM_*) in bits 5-6. */
@@ -84,6 +98,7 @@ typedef struct {
     float lp;                              /* the noise filter */
     uint32_t def;                          /* the kit definition it plays (DEF_*) */
     float tune;                            /* its rate x (the tom's pitch; 1 otherwise) */
+    uint32_t pos2;                         /* a sampled voice: the crossfading hit's place (NE its level, PE its fall) */
 } DrumVoice;
 
 typedef struct {
@@ -106,8 +121,13 @@ uint32_t drumchapel_groove_len(int groove, int pattern);
 uint32_t drumchapel_groove_step(int groove, int pattern, uint32_t k);   /* step k's byte */
 const uint32_t *drumchapel_metal(void);             /* the six squares' phase increments (2^32 = one cycle) */
 const uint32_t *drumchapel_tune(void);              /* the tom's four pitches, x its rate (float bits) */
+const uint32_t *drumchapel_samples(uint32_t *nwords);   /* the sample table (above); 0 words without samples_data.h */
+int drumchapel_sampled(void);                       /* 1: samples_data.h was there (Acoustic plays its samples) */
+uint32_t drumchapel_sample_first(int voice);        /* KICK or SNARE: its first index in the table, and length */
+uint32_t drumchapel_sample_len(int voice);
+float drumchapel_sample(uint32_t i);                /* table sample i, as a float (q / 32768) */
 const char *drumchapel_pattern_name(int p);
 const char *drumchapel_kit_name(int kit);
-extern const float drumchapel_r2, drumchapel_third, drumchapel_silent, drumchapel_gate_k;
+extern const float drumchapel_r2, drumchapel_third, drumchapel_silent, drumchapel_gate_k, drumchapel_xf;
 
 #endif

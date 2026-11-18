@@ -250,7 +250,8 @@ DM(10) Chug, DM(11) Tone (all 0..1), DM(13) Level (0..1).
 ## Drum Chapel (`drumchapel/`)
 
 A drum machine block (an overlay on the mono Ratchet, tempo-synced; HANDOVER.md, "Five new overlay effects"). The
-guitar passes at exactly unity; four synthesised voices are added: kick, snare, hat and tom. Click's timing: an
+guitar passes at exactly unity; four voices are added: kick, snare, hat and tom, synthesised but for the Acoustic
+kit's sampled kick and snare. Click's timing: an
 integer phase, so every sixteenth lands on its exact sample for ever; the first sample after reset is step 0.
 
 **Grooves.** Groove 0, **Classic**, is the 20 original one-bar patterns (Rock, Half-Time, ... Fill). Grooves 1..11
@@ -263,9 +264,9 @@ length and meter (up to 384 sixteenths), drops ghost notes (velocity under 40) a
 voices (its docstring has the map: cymbals and open hats play the hat voice with the open decay; four tom pitches).
 
 **Knobs.** Time (the host delay's, synced to tap tempo), Groove (list: Classic + 11 families), Pattern ("1".."20":
-the Classic pattern, or the family's variation, Pattern mod its size), Kit (Boom, Punch, Tick, Bit, Doom, Eighty),
+the Classic pattern, or the family's variation, Pattern mod its size), Kit (Boom, Punch, Tick, Bit, Doom, Eighty, Acoustic),
 Kick (also the toms' level), Snare, Hat, Swing (odd sixteenths late by up to a third), Level. Knob words: DM(5) Time
-s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..5), DM(8) Kick, DM(9) Snare, DM(10) Hat, DM(11) Swing,
+s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..6), DM(8) Kick, DM(9) Snare, DM(10) Hat, DM(11) Swing,
 DM(13) Level (0..1), DM(14) Groove (int 0..11).
 
 **Playing a groove.** The step counter wraps at the groove's length. A step looks its groove up when it falls and
@@ -283,6 +284,33 @@ the unit it sits inside Blob 0 in DDR2, right after Geiger's curves, and the ker
 `drumchapel.c`: Boom's toms long sines, Punch's swept with a tick, Tick's bongo-like, Bit's falling squares, Doom's
 tuned way down (floor ~28 Hz) and through its fuzz, Eighty's synth-drum sweeps, gated like its snare.
 
+**Acoustic** (kit 6) plays recorded samples for its kick and snare; its hat, tom and open hat are synthesised (a
+little metal under the hat's noise, a short-drop tom with a dark skin noise; its open hat, which also plays every
+cymbal of the grooves, is the closed hat a little open: the same tone, 1.75 x its decay, 0.7 x its level, so the
+crash and ride on every eighth stay short, with no sustained wash). The samples come from
+the user's own bounces (single hits, possibly of a commercial drum instrument), converted locally by
+`drumchapel/samples.py KICK SNARE` into `drumchapel/samples_data.h`, which is **git-ignored and must never be
+committed** (the repository is public); no committed file holds a sample. Without it Acoustic's kick and snare are
+Punch's synthesised ones and everything still builds and checks. The converter (numpy): mono (the channels' mean),
+48 kHz through a fixed Kaiser-windowed sinc, the start at the quietest sample in the millisecond before the onset
+(30 % of the peak), the end 5 ms before the high band (first difference, 10 ms windows) next rises 6 dB over its
+quietest point (the next hit in the bounce), a raised-cosine fade over the last 30 %, both normalised to full scale,
+16 bits. With the user's two files: kick 10,844 samples (226 ms; the bounce's next kick starts at 238 ms, so a
+longer tail was not there to keep), snare 10,999 (229 ms, from its onset 25.4 ms in, cut before a noise burst at
+260 ms). 48 kHz was kept: both together are 10,922 words, well inside the Blob 0 buffer, so a lower rate would buy
+nothing. The table: 16-bit samples, two to a word (sample i in word i / 2, its low half when i is even; the snare
+starts on a word), `drumchapel_samples()`.
+
+A sampled definition is marked by its PD word being 0 (a synthesised one always has PD > 0); its INC word is the
+sample's first index, SWEEP its length. A hit plays the sample from its start at the knob's level (Kick or Snare, no
+envelope); the voice stops at the sample's end. A retrigger while it sounds crossfades: the sounding hit keeps
+playing from where it was, its level falling linearly to 0 over 64 samples (1.3 ms), beside the new one; the largest
+output step across a kick retrigger is then smaller than inside a hit (0.09 against a plain restart's 0.68).
+Acoustic's chain is nearly transparent: DRIVE 0.25 and COMP 1 / (1.5 x 0.25), so a full-scale sample at Level 1
+comes out at its own level, reduced by the 1.5 z - 0.5 z^3 shaper by at most 2 % (0.2 dB) at its very peak; only
+stacked hits are limited (the ceiling is COMP x Level: about 2 x Level where kick, snare and tom meet at full
+knobs). At the default knobs its rms is like the other kits' (0.15).
+
 **Tests** (`drumchapel/test_drumchapel.c`): Click's exact timing over ten minutes at six tempos; every Classic
 pattern's hits; swing; unity pass-through; the kits' character; block sizes and interleaved instances; hostile
 input and knobs; Classic **bit for bit as before the grooves** (hashes of all 20 patterns x 6 kits at two
@@ -290,7 +318,12 @@ settings, recorded with the three-voice version); the bank's directory; every gr
 step its count mod the length, the hits its byte says, the wrap); a 29/4 groove for ten minutes; Groove and Pattern
 changes mid-play (the count continues, no step moves in time); the four tom pitches falling in every kit and silent
 at Kick 0; the open hat outlasting the closed one. The tests that need toms or open hats write their own short
-grooves into the bank, so they run without the converted data too.
+grooves into the bank, so they run without the converted data too. Acoustic: with the samples, its kick and snare
+output equals the stored sample x the knob, sample for sample through the kit's chain, at two levels; silence after
+the sample's end; retriggers (on the next step, runs of them, a groove) crossfading exactly as specified, and no
+larger step than inside a hit; the chain within 2.1 % of the sample; without them, its kick and snare definitions
+are Punch's word for word. Every groove runs in Acoustic (steps, hits, a bounded output). The Classic hashes cover
+the six synthesised kits, unchanged.
 
 ### Drum Chapel on the SHARC (`drumchapel/sharc/`)
 
@@ -299,5 +332,9 @@ equal to the reference's for 13 fixed settings plus cases picked from the bank (
 with open hats in their first steps), two instances with every knob moving, a re-created block; then a long run
 through a whole 13/4 groove past its wrap with Groove, Pattern and Kit changed mid-play. The bank is loaded into the
 simulator at `BANK_CHECK` (kernel_rig's `spec.ext`); the image build puts it in Blob 0 and assembles the kernel
-for that address (`place_bank`). 451 instructions, 398 data words (2 slots), worst 6,620 cycles per 16-sample call
-in ssim (the three-voice version: 409, 296, 5,345).
+for that address (`place_bank`). The Acoustic samples sit right after the bank (`T_SAMP`; in the check too, loaded
+beside it); `place_bank` places both. Cases in Acoustic cover retriggers at 1,200 samples, each voice's end, Kick
+and Hat at 0, a groove with toms, and Kit changes into and out of Acoustic in the moving-knob and long runs. 515
+instructions, 452 data words (2 slots), worst 6,821 cycles per 16-sample call in ssim (ssim does not model DDR2
+latency); before Acoustic 451, 398, 6,620 (the three-voice version: 409, 296, 5,345). A sounding sampled voice reads
+one DDR2 word a sample, two while a retrigger crossfades (at most four a sample with kick and snare both fading).

@@ -16,6 +16,11 @@ The grooves are a read-only bank (drumchapel_bank: the directory, then the steps
 T_DIR: on the unit inside Blob 0 in DDR2 (build_all.py places it and calls place_bank), in the check at
 BANK_CHECK, loaded into the simulator from the C library (spec.ext). It holds the converted grooves when
 effects/drumchapel/grooves_data.h exists (grooves.py), else the Classic patterns only.
+
+The Acoustic kit's samples (drumchapel_samples: 16-bit, two to a word) are a second read-only table, right after
+the bank (T_SAMP), loaded into the simulator beside it and placed in Blob 0 beside it by the image build. They exist
+when effects/drumchapel/samples_data.h does (samples.py); without it the table is empty and Acoustic's kick and
+snare are synthesised (Punch's), so nothing reads it.
 """
 import ctypes
 import os
@@ -27,11 +32,12 @@ sys.path.insert(0, os.path.join(HERE, '..', '..', 'common'))
 import kernel_rig as kr  # noqa: E402
 from kernel_rig import f32, fw  # noqa: E402
 
-NPAT, NGROOVE, NKIT, NV, NDEF, NMETAL, SEED, PERIOD = 20, 12, 6, 4, 5, 6, 0x6D2B79F5, 288000000
+NPAT, NGROOVE, NKIT, NV, NDEF, NMETAL, SEED, PERIOD = 20, 12, 7, 4, 5, 6, 0x6D2B79F5, 288000000
+ACOUSTIC = 6
 DIR_WORDS = NGROOVE * NPAT
 NSLOTS = 2
 BANK_CHECK = 0x3A0000                   # the bank's address in the check; the image build sets the unit's (DDR2)
-VFIELDS = ['PH', 'PH2', 'PE', 'TE', 'NE', 'AGE', 'LP', 'DEF', 'TUNE']        # = DrumVoice
+VFIELDS = ['PH', 'PH2', 'PE', 'TE', 'NE', 'AGE', 'LP', 'DEF', 'TUNE', 'POS2']   # = DrumVoice
 KFIELDS = ['DRIVE', 'COMP', 'TDRIVE', 'M2', 'HOLD', 'GATE']                  # = drumchapel.h DK_*, then the definitions
 DFIELDS = ['INC', 'SWEEP', 'PD', 'TD', 'ND', 'TLEV', 'NLEV', 'NF']           # = DV_*
 DK_WORDS = len(KFIELDS) + NDEF * len(DFIELDS)
@@ -48,6 +54,19 @@ def bank():
     n = ctypes.c_uint32()
     p = lib.drumchapel_bank(ctypes.byref(n))
     return [p[k] for k in range(n.value)]
+
+
+def samples():
+    """The sample table's words (none without samples_data.h), from the C library."""
+    lib = kr.lib()
+    lib.drumchapel_samples.restype = ctypes.POINTER(ctypes.c_uint32)
+    n = ctypes.c_uint32()
+    p = lib.drumchapel_samples(ctypes.byref(n))
+    return [p[k] for k in range(n.value)]
+
+
+def sampled():
+    return bool(kr.lib().drumchapel_sampled())
 
 
 def families():
@@ -70,17 +89,21 @@ def tables():
 
 def consts():
     lib = kr.lib()
-    c = {n: ctypes.c_float.in_dll(lib, f'drumchapel_{n}').value for n in ('r2', 'third', 'silent', 'gate_k')}
+    c = {n: ctypes.c_float.in_dll(lib, f'drumchapel_{n}').value for n in ('r2', 'third', 'silent', 'gate_k', 'xf')}
     return dict(K_R2=fw(c['r2']), K_THIRD=fw(c['third']), K_SILENT=fw(c['silent']), K_GATE=fw(c['gate_k']),
-                K_TMIN=fw(f32(0.1)))
+                K_TMIN=fw(f32(0.1)), K_XF=fw(c['xf']))
 
 
 def place_bank(spec, addr):
-    """The bank at `addr` (its directory first): the kernel's T_DIR / T_STEPS, and the words the check loads there."""
-    spec.extra_equ = [e for e in spec.extra_equ if not e.startswith(('.equ T_DIR,', '.equ T_STEPS,'))]
-    spec.extra_equ += [f'.equ T_DIR, {addr:#x}', f'.equ T_STEPS, {addr + DIR_WORDS:#x}']
-    spec.bank_addr = addr
-    spec.ext = [(addr, bank())]
+    """The bank at `addr` (its directory first) and the sample table right after it: the kernel's T_DIR / T_STEPS /
+    T_SAMP, and the words the check loads there. Returns the sample table's address."""
+    b = bank()
+    samp = addr + len(b)
+    spec.extra_equ = [e for e in spec.extra_equ if not e.startswith(('.equ T_DIR,', '.equ T_STEPS,', '.equ T_SAMP,'))]
+    spec.extra_equ += [f'.equ T_DIR, {addr:#x}', f'.equ T_STEPS, {addr + DIR_WORDS:#x}', f'.equ T_SAMP, {samp:#x}']
+    spec.bank_addr, spec.samp_addr = addr, samp
+    spec.ext = [(addr, b), (samp, samples())]
+    return samp
 
 
 def make_spec(bank_addr=BANK_CHECK):
@@ -88,7 +111,8 @@ def make_spec(bank_addr=BANK_CHECK):
     equ = [f'.equ SEED, {SEED:#x}', f'.equ PERIOD, {PERIOD}', f'.equ BPM100_NUM, 2304000000', f'.equ VW, {vs}',
            f'.equ VEND, {2 + len(STATE)}', f'.equ DK_WORDS, {DK_WORDS}', f'.equ DK_V0, {len(KFIELDS)}',
            f'.equ DV_WORDS, {len(DFIELDS)}', f'.equ DMETAL, {NMETAL}', f'.equ B_OPEN, {B_OPEN}',
-           f'.equ DO_HAT, {len(KFIELDS) + 2 * len(DFIELDS)}', f'.equ DO_OPEN, {len(KFIELDS) + 4 * len(DFIELDS)}']
+           f'.equ DO_HAT, {len(KFIELDS) + 2 * len(DFIELDS)}', f'.equ DO_OPEN, {len(KFIELDS) + 4 * len(DFIELDS)}',
+           f'.equ KITMAX, {NKIT - 1}']
     equ += [f'.equ VS_{n}, {k}' for k, n in enumerate(VFIELDS)]
     equ += [f'.equ DK_{n}, {k}' for k, n in enumerate(KFIELDS)]
     equ += [f'.equ DV_{n}, {k}' for k, n in enumerate(DFIELDS)]
@@ -129,6 +153,9 @@ def _groove_cases():
         gp = _find(lambda b, t=t: b & B_TOM and (b >> B_PITCH & 3) == t)
         if gp:
             out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=t + 1, kick=1, snare=0.8, hat=0.7, swing=0.2 * t, level=1))
+    gp = _find(lambda b: b & B_TOM)
+    if gp:                                                                          # Acoustic's synthesised toms
+        out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=ACOUSTIC, kick=1, snare=1, hat=0.8, swing=0, level=1))
     gp = _find(lambda b: b & B_OPEN)
     if gp:
         out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=0, kick=0.7, snare=0.7, hat=1, swing=0, level=1))
@@ -150,6 +177,13 @@ CASES = [
     dict(time=-9, pattern=-9, kit=-9, kick=-9, snare=-9, hat=-9, swing=-9, level=-9, groove=-9),
     dict(time=0.1, pattern=3, kit=4, kick=1, snare=1, hat=1, swing=0, level=1, groove=10),                  # a family (or Classic)
     dict(time=0.1, pattern=17, kit=1, kick=1, snare=1, hat=1, swing=0.4, level=1, groove=3),
+    # Acoustic (kit 6): the samples (or Punch's kick and snare without them); retriggers at 1,200 samples (Gallop),
+    # each voice's end (Time 0.5: a hit every 6,000+ samples), Kick and Hat at 0, every voice
+    dict(time=0.1, pattern=16, kit=6, kick=1, snare=1, hat=1, swing=0, level=1, groove=0),
+    dict(time=0.1, pattern=12, kit=6, kick=0.9, snare=0.8, hat=0.6, swing=0.6, level=0.7, groove=0),
+    dict(time=0.5, pattern=0, kit=6, kick=0.8, snare=0.7, hat=0.5, swing=0, level=1, groove=0),
+    dict(time=0.13, pattern=9, kit=6, kick=0.0, snare=1, hat=0.0, swing=0.3, level=1, groove=0),
+    dict(time=0.1, pattern=19, kit=6, kick=1, snare=1, hat=1, swing=0.1, level=1, groove=3),
 ] + _groove_cases()
 
 

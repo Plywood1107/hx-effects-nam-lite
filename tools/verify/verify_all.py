@@ -57,8 +57,9 @@ if OVL:                                               # what the build set: the 
         if n in rings:
             mod.SPEC = mod.make_spec(rings[n])
         mod.SPEC.places['b3'] = tuple(OVL['place'])
-        if n == 'drumchapel' and OVL.get('grooves'):   # its grooves bank, where the build put it
-            mod.place_bank(mod.SPEC, OVL['grooves']['bank'])
+        if n == 'drumchapel' and OVL.get('grooves'):   # its grooves bank and samples, where the build put them
+            samp_at = mod.place_bank(mod.SPEC, OVL['grooves']['bank'])
+            assert 'samples' not in OVL or OVL['samples']['addr'] == samp_at
         OVL_MEMBERS.append((n.upper(), mod.SPEC, 'b3', f'{n.upper()}_ENTRY'))
     ovl_stub_kernel.configure(code_n=OVL['code_n'], data0=OVL['data0'], members=OVL['members'], meter=OVL.get('meter', False))
 
@@ -210,14 +211,25 @@ if OVL:
     t = OVL['curves'] - base
     curves = geiger_kernel.tables()
     gr = OVL.get('grooves')
-    dc_bank = importlib.import_module('drumchapel_kernel').bank() if gr else []
+    dcm = importlib.import_module('drumchapel_kernel') if gr else None
+    dc_bank = dcm.bank() if gr else []
+    sm = OVL.get('samples')
+    dc_samp = dcm.samples() if sm else []
     if gr:
         check(gr['bank'] == OVL['curves'] + len(curves) and gr['words'] == len(dc_bank),
               f'Drum Chapel grooves: {len(dc_bank)} words at DDR2 {gr["bank"]:#x} (right after Geiger\'s curves), '
               f'{gr["families"]} of 11 families')
-    o_words, o_cfg = ovl_stub_kernel.layout(OVL_MEMBERS, OVL['curves'] + len(curves) + len(dc_bank))
-    want_pad = curves + dc_bank + o_words
-    what = "Geiger's curves, Drum Chapel's grooves" if gr else "Geiger's curves"
+    if sm:
+        check(sm['addr'] == gr['bank'] + len(dc_bank) and sm['words'] == len(dc_samp) and sm['sampled'] == dcm.sampled()
+              and dcm.SPEC.samp_addr == sm['addr'] and f'.equ T_SAMP, {sm["addr"]:#x}' in dcm.SPEC.extra_equ,
+              f'Drum Chapel samples: {len(dc_samp)} words at DDR2 {sm["addr"]:#x} (right after the grooves, the kernel\'s T_SAMP)'
+              + ('' if sm['sampled'] else ': none, Acoustic plays Punch\'s kick and snare'))
+        if dc_samp:
+            check(b0[sm['addr'] - base: sm['addr'] - base + len(dc_samp)] == dc_samp and sm['addr'] - base + len(dc_samp) <= len(b0),
+                  f'  its {len(dc_samp)} words are in Blob 0 at {sm["addr"] - base:#x}..{sm["addr"] - base + len(dc_samp):#x}, as converted')
+    o_words, o_cfg = ovl_stub_kernel.layout(OVL_MEMBERS, OVL['curves'] + len(curves) + len(dc_bank) + len(dc_samp))
+    want_pad = curves + dc_bank + dc_samp + o_words
+    what = "Geiger's curves, Drum Chapel's grooves" + (" and samples" if dc_samp else "") if gr else "Geiger's curves"
     check(b0[t: t + len(want_pad)] == want_pad and o_cfg['members'] == OVL['members'],
           f'Blob 0 carries {what} and the overlays at {t:#x} ({len(want_pad)} words), as assembled')
     check(ctab == t + len(want_pad), '  right before the last composite table')

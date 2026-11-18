@@ -9,12 +9,16 @@
 // words from T_KIT + kit x DK_WORDS, fields DK_* and, per definition, DV_* (VS_DEF: the offset of the one a
 // voice plays, from its kit's first word).
 //
-// Knob words: DM(5) Time s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..5), DM(8) Kick 0..1,
+// Knob words: DM(5) Time s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..6), DM(8) Kick 0..1,
 //             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1, DM(14) Groove (int 0..11).
 //
 // The grooves are a read-only bank in DDR2 (inside Blob 0, at T_DIR; drumchapel.h): a directory word per
 // Groove x Pattern, (first step << 9) | length, then the steps, four bytes to a word from T_STEPS. Read only
 // when a step falls: the directory word and the step's word, two reads a sixteenth.
+//
+// The Acoustic kit's samples are a read-only table in DDR2 too, right after the bank (T_SAMP): 16-bit, two to a
+// word. A definition whose PD word is 0 is a sample (INC its first index, SWEEP its length); a voice playing one
+// reads one word a sample (two while a retriggered hit crossfades out), and stops at the sample's end.
 //
 // A call: the knobs; the tempo for the 16 samples (at most one step falls in a call: a sixteenth is at
 // least 1,200 samples, swing delays one by at most a third), and that step's byte from the bank; then each
@@ -154,10 +158,10 @@ k_divn:
     F15 = F15 * F8;
     R1 = TRUNC F15;
 
-    R5 = DM(7, I0);                     // Kit 0..5 -> its words (R5)
+    R5 = DM(7, I0);                     // Kit 0..6 -> its words (R5)
     R8 = 0;
     R5 = MAX(R5, R8);
-    R8 = 5;
+    R8 = KITMAX;
     R5 = MIN(R5, R8);
     R8 = DK_WORDS;
     R5 = R5 * R8 (UUI);
@@ -298,6 +302,9 @@ h_loop:
     DM(VS_TUNE, I3) = F2;
     R9 = R9 + R5;
     I4 = R9;
+    R10 = DM(DV_PD, I4);                // PD 0: a sample
+    R10 = PASS R10;
+    IF EQ JUMP h_samp;
     F8 = DM(DV_TLEV, I4);
     F8 = F8 * F7, F9 = DM(DV_NLEV, I4);
     F9 = F9 * F7, DM(VS_TE, I3) = F8;
@@ -362,6 +369,9 @@ v_loop:
     R10 = DM(VS_DEF, I3);
     R10 = R10 + R5;
     I4 = R10;
+    R10 = DM(DV_PD, I4);                // PD 0: a sample
+    R10 = PASS R10;
+    IF EQ JUMP v_samp;
     F12 = F2 * F9;                      // u, the filter's input
     R10 = 2;
     COMP(R13, R10);
@@ -513,6 +523,80 @@ k_exit:
     MODE1 = DM(SAVE + 0);
     NOP;
     RTS (LR);
+
+// ---- a sampled voice's hit (from h_loop; F7 its knob's level): the sounding hit becomes the fading one, from
+//      where it is (NE its level, falling by PE = NE / 64 a sample, POS2 its place); the new one from 0 at F7
+h_samp:
+    F8 = DM(VS_TE, I3);
+    R9 = DM(VS_AGE, I3);
+    DM(VS_NE, I3) = F8;
+    DM(VS_POS2, I3) = R9;
+    R10 = K_XF;
+    F8 = F8 * F10;
+    DM(VS_PE, I3) = F8;
+    DM(VS_TE, I3) = F7;
+    R8 = 0;
+    DM(VS_AGE, I3) = R8;
+    JUMP h_next;
+
+// ---- a sampled voice (from v_loop; I4 its definition: INC its first index, SWEEP its length): sample[AGE] x TE,
+//      TE = 0 at its end (the voice stops); a retriggered hit's sample[POS2] x NE while NE > 0, NE falling by PE
+v_samp:
+    R11 = DM(DV_INC, I4);
+    R12 = DM(DV_SWEEP, I4);
+    R8 = DM(VS_AGE, I3);
+    COMPU(R8, R12);
+    IF GE JUMP vs_end;
+    R9 = R8 + 1;
+    DM(VS_AGE, I3) = R9;
+    R9 = R11 + R8;
+    CALL g_smp;
+    F10 = DM(VS_TE, I3);
+    F9 = F9 * F10;
+    F3 = F3 + F9;
+    JUMP vs_old;
+vs_end:
+    R8 = 0;
+    DM(VS_TE, I3) = R8;
+vs_old:
+    F8 = DM(VS_NE, I3);
+    F8 = PASS F8;
+    IF LE JUMP vs_off;
+    R8 = DM(VS_POS2, I3);
+    COMPU(R8, R12);
+    IF GE JUMP vs_off;
+    R9 = R8 + 1;
+    DM(VS_POS2, I3) = R9;
+    R9 = R11 + R8;
+    CALL g_smp;
+    F10 = DM(VS_NE, I3);
+    F9 = F9 * F10;
+    F3 = F3 + F9;
+    F8 = DM(VS_PE, I3);
+    F10 = F10 - F8;
+    DM(VS_NE, I3) = F10;
+    JUMP v_next;
+vs_off:
+    R8 = 0;
+    DM(VS_NE, I3) = R8;
+    JUMP v_next;
+
+// ---- F9 = sample R9 of the table (DDR2): the word T_SAMP + R9 / 2, its low half if R9 is even, as q / 32768.
+//      Uses R1, R10, I4.
+g_smp:
+    R10 = LSHIFT R9 BY -1;
+    R1 = T_SAMP;
+    R10 = R10 + R1;
+    I4 = R10;
+    R10 = DM(0, I4);                    // (DDR2)
+    BTST R9 BY 0;
+    IF NOT SZ JUMP g_shi;
+    R10 = LSHIFT R10 BY 16;
+g_shi:
+    R10 = ASHIFT R10 BY -16;
+    R1 = -15;
+    F9 = FLOAT R10 BY R1;
+    RTS;
 
 // ---- F9 = the parabolic sine of the phase F9 (sine_p). Uses F10, F11.
 g_sin:

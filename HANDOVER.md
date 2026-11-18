@@ -398,7 +398,7 @@ SHARC kernel checked bit for bit in ssim (effects/<dir>, `make -C effects test`,
 |---|---|---|---|---|---|
 | Pure Whitey | purewhitey | Tycoctavia Fuzz | 0x2aac | 421 / 151 / 2,547 | Mandala-style sampler, 8 modes; 1 slot; 4,096-word ring (16-bit pairs at 24 kHz = 0.34 s) in DDR2 |
 | Greasy Strangler | greasy | Boctaver | 0x2ab6 | 398 / 128 / 2,788 | Corrupt's tracker + Doom Chug's drone; holds the last note |
-| Drum Chapel | drumchapel | Ratchet (tempo sync) | 0x23ac | 451 / 398 / 6,620 | Click's timing; Classic (20 patterns) + 11 converted groove families, 4 voices, 6 kits (Boom, Punch, Tick, Bit, Doom, Eighty); was 409 / 296 / 5,345 before the grooves |
+| Drum Chapel | drumchapel | Ratchet (tempo sync) | 0x23ac | 515 / 452 / 6,821 | Click's timing; Classic (20 patterns) + 11 converted groove families, 4 voices, 7 kits (Boom, Punch, Tick, Bit, Doom, Eighty, Acoustic: sampled kick and snare); was 451 / 398 / 6,620 before Acoustic, 409 / 296 / 5,345 before the grooves |
 | Bethblahem | bethblahem | Twin Harmony | 0x0833 | 399 / 80 / 3,535 | low theremin, Octave 0..-4, Growl, Sub; 6 Hz high-pass + limiter |
 | Puggy Puncher | puggy | Sweep Echo (tempo sync) | 0x045e | 377 / 133 / 2,627 | slot-machine glitch per step; Seed repeats a bar |
 
@@ -453,6 +453,28 @@ characters ("Proggy 13/4", "Tomapalooza"); Drum Chapel's swap is 678 + 398 = 1,0
 `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf`, MD5 09732d36f865985d41f4ee0d818bea8d, verified ALL OK (bank at DDR2
 0x294839), with the pack converted. With the footswitch fix (`plain_delay`, 14 Entry 0 bytes on top of that image):
 MD5 4eb77e0466f794be9f21db06f188454f, verified ALL OK, flashed 2026‑11‑18; the user played the grooves: "sounds good".
+
+**Drum Chapel's Acoustic kit (2026‑11‑18, not yet on the unit).** Kit 6, **Acoustic**: its kick and snare play
+recorded samples, its hat, tom and open hat are synthesised (the open hat, which plays every crash/ride/china of the
+grooves, is its closed hat a little open: same tone, 1.75 x the decay, 0.7 x the level; the first version's long
+wash sounded bad on the renders). The samples are the user's own bounces (a kick and a snare from their Logic
+folder, possibly of a commercial drum plugin), converted by `effects/drumchapel/samples.py KICK SNARE`
+into `effects/drumchapel/samples_data.h`, which is **git-ignored and must never be committed** (no committed file
+holds a sample); without it Acoustic plays Punch's synthesised kick and snare and everything builds and checks
+(verified in a scratch copy). Trim: the first hit only, from a near-zero sample just before the onset, to 5 ms before
+the high band rises again, with a raised-cosine fade over the last 30 %: kick 226 ms (the bounce's next kick starts at
+238 ms), snare 229 ms from its onset 25.4 ms in (a noise burst follows at 260 ms); mono, 48 kHz (fixed Kaiser sinc),
+same peak, 16 bits two to a word: 10,922 words, a read-only table in Blob 0 right after the groove bank (manifest
+`overlay.samples`; verify_all checks its address, T_SAMP and its words), never swapped. Blob 0 is 0x7df45 of its
+0x7f000 words (4,283 free; 15,355 before). A sampled voice reads one DDR2 word a sample (two during a 64-sample
+retrigger crossfade); Acoustic's DRIVE 0.25 keeps the samples clean (at most 0.2 dB off at a full-scale peak).
+Kernel 515 instructions / 452 data / worst 6,821 cycles in ssim (was 451 / 398 / 6,620); the swap is 774 + 452 =
+1,226 words (was 678 + 398) and the shared overlay region grew with it (the other overlays' code re-assembles at the
+moved address, their data address is unchanged). Details: `effects/README.md`, "Drum Chapel". Image: `build.py full
+--quick` -> `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf`, MD5 d1b14ce704589e687c6909b1f512a26e, verified ALL OK.
+Risks for the unit test: per-sample DDR2 reads from an overlay (up to four a sample: kick and snare both
+crossfading, ~64 a call; ssim does not model DDR2 latency, Pure Whitey's ring is the nearest proven case), the larger
+swap per call, and Acoustic's output, which can reach about 2 x Level where kick, snare and tom meet at full knobs.
 
 ## Don'ts
 

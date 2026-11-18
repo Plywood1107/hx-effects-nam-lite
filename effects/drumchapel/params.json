@@ -4,7 +4,7 @@
   "parameters": [
     {"id": "time", "display": "Time", "type": "continuous", "min": 0.1, "max": 4, "default": 0.5, "unit": "s (one beat)", "smoothing": "immediate (BPM rounded to 0.01)"},
     {"id": "pattern", "display": "Pattern", "type": "integer", "min": 0, "max": 19, "default": 0, "unit": "", "smoothing": "next step"},
-    {"id": "kit", "display": "Kit", "type": "integer", "min": 0, "max": 5, "default": 0, "unit": "", "smoothing": "immediate"},
+    {"id": "kit", "display": "Kit", "type": "integer", "min": 0, "max": 6, "default": 0, "unit": "", "smoothing": "immediate"},
     {"id": "kick", "display": "Kick", "type": "continuous", "min": 0, "max": 1, "default": 0.8, "unit": "x (shown as %)", "smoothing": "next hit"},
     {"id": "snare", "display": "Snare", "type": "continuous", "min": 0, "max": 1, "default": 0.7, "unit": "x (shown as %)", "smoothing": "next hit"},
     {"id": "hat", "display": "Hat", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "x (shown as %)", "smoothing": "next hit"},

@@ -176,7 +176,8 @@ GREASY_PARAMS = (    # the kernel reads words 5..11 and 13 (effects/greasy/sharc
 DRUMCHAPEL_PATTERNS = ['Rock', 'Half-Time', 'Four Floor', 'Disco', 'Shuffle', 'Motorik', 'Break', 'Funk', 'Boom Bap',
                        'Bossa', 'One Drop', 'Punk', 'Blast', 'Sludge', 'Trap', 'Two-Step', 'Gallop', 'Hats Only',
                        'Kick Only', 'Fill']
-DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty']
+DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty', 'Acoustic']   # Acoustic: sampled kick and snare
+# (effects/drumchapel/samples.py; git-ignored samples_data.h, Punch's synthesised ones without it)
 # Groove 0 plays the 20 patterns above; 1..11 the families converted by effects/drumchapel/grooves.py (Classic when
 # its git-ignored output is missing), Pattern then the variation (mod the family's size)
 DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES]
@@ -190,7 +191,7 @@ DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_par
     (8, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Swing', 'Swing', 'percent', (0.0, 1.0), 0.0),
     (9, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
 )
-assert len(DRUMCHAPEL_GROOVES) == 12
+assert len(DRUMCHAPEL_GROOVES) == 12 and len(DRUMCHAPEL_KITS) == 7
 PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
     (1, 5,  'HD2_FM4SynthOMatic', 'Wave', 'Mode', 'Mode', LIST,
      {0: 'Repeat', 1: 'Random', 2: 'Reverse', 3: 'Trigger', 4: 'Sq Trigger', 5: 'Square', 6: 'Up', 7: 'Down'}, 0),
@@ -622,21 +623,26 @@ def main():
             curves = geiger_kernel.tables()
             assert len(curves) == GEIGER_CURVES_WORDS
             base = bnc.BLOB0_BASE + b0_len
-            dc_bank = []
-            if 'drumchapel' in overlays:                # Drum Chapel's grooves (read-only), right after the curves
+            dc_bank, dc_samp = [], []
+            if 'drumchapel' in overlays:                # Drum Chapel's grooves and samples (read-only), after the curves
                 dc = OVL_MODS['drumchapel']
-                dc_bank = dc.bank()
-                dc.place_bank(dc.SPEC, base + len(curves))   # the same spec object ovl_stub_kernel.MEMBERS holds
+                dc_bank, dc_samp = dc.bank(), dc.samples()
                 dc_at = base + len(curves)
+                dc_samp_at = dc.place_bank(dc.SPEC, dc_at)   # the same spec object ovl_stub_kernel.MEMBERS holds
+                assert dc_samp_at == dc_at + len(dc_bank)
                 print(f'[+] Drum Chapel grooves: {dc.families()} of 11 families converted'
                       f'{"" if dc.families() else " (no grooves_data.h: the Groove knob plays Classic everywhere)"}; '
                       f'bank {len(dc_bank)} words at DDR2 {dc_at:#x}')
-            o_words, ovl = ovl_stub_kernel.layout([m[:4] for m in ovl_stub_kernel.MEMBERS], base + len(curves) + len(dc_bank))
-            pad = curves + dc_bank + o_words
+                print(f'[+] Drum Chapel samples: ' + (f'{len(dc_samp)} words at DDR2 {dc_samp_at:#x} (the Acoustic kit\'s kick and snare)'
+                      if dc_samp else 'none (no samples_data.h: the Acoustic kit plays Punch\'s synthesised kick and snare)'))
+            o_words, ovl = ovl_stub_kernel.layout([m[:4] for m in ovl_stub_kernel.MEMBERS],
+                                                  base + len(curves) + len(dc_bank) + len(dc_samp))
+            pad = curves + dc_bank + dc_samp + o_words
             geiger_kernel.EXT_CURVES = base
             ovl_stub_kernel.configure(**ovl)
             print(f'[+] Entry 4: inside Blob 0 at DDR2 {base:#x}: Geiger\'s curves ({len(curves)} words), '
-                  f'{f"Drum Chapel grooves ({len(dc_bank)} words), " if dc_bank else ""}the overlays '
+                  f'{f"Drum Chapel grooves ({len(dc_bank)} words), " if dc_bank else ""}'
+                  f'{f"Drum Chapel samples ({len(dc_samp)} words), " if dc_samp else ""}the overlays '
                   f'({", ".join(f"{m["name"]} {m["n_code"]}+{m["n_data"]}" for m in ovl["members"])}); rings at {ring0:#x}')
         if k == 'probe':        # the magic word and the routine inside Blob 0, before the probe's own table copy
             import probe_kernel
@@ -648,6 +654,8 @@ def main():
         e4n, blobs[k], comps[k] = pa.add_model_entry4(e4n, clone['blob_index'], params[k], 0, prim_id=EFFECTS[k]['prim'],
                                                       b0_pad=pad, **({'blob_fn': bc.click_host_blob} if EFFECTS[k].get('sync') else {}))
     print('[+] Entry 4: ' + ', '.join(f'{k} blob {blobs[k]} on {comps[k]:#x}' for k in blobs))
+    w4 = struct.unpack('<%dI' % (len(e4n) // 4), e4n)
+    print(f'[+] Entry 4: Blob 0 {w4[w4[3]]:#x} words of its {blob0_words:#x}-word buffer ({blob0_words - w4[w4[3]]} free)')
     if probe:                                            # where the probe's words landed, checked
         w4 = struct.unpack('<%dI' % (len(e4n) // 4), e4n)
         d = w4[3]
@@ -783,7 +791,8 @@ def main():
         manifest['extras'] = extras
     if overlay:
         manifest['overlay'] = dict(ovl, meter=meter, ring0=ring0, rings=rings, curves=geiger_kernel.EXT_CURVES,
-                                   **({'grooves': dict(bank=dc_at, words=len(dc_bank), families=OVL_MODS['drumchapel'].families())}
+                                   **({'grooves': dict(bank=dc_at, words=len(dc_bank), families=OVL_MODS['drumchapel'].families()),
+                                       'samples': dict(addr=dc_samp_at, words=len(dc_samp), sampled=OVL_MODS['drumchapel'].sampled())}
                                       if 'drumchapel' in overlays else {}),
                                    place=list(ovk[overlays[0]].places['b3']), names=overlays)
     manifest.update(blob0_words=blob0_words, checked=check)
