@@ -3,9 +3,8 @@
 
 usage: grooves.py FOLDER [-o grooves_data.h] [--stats]
 
-The loops are a commercial pack and the repository is public, so the output is git-ignored and must never be
-committed; nothing in the repository names a file of the pack or carries its notes. Without the output the
-reference, the kernel check and the image build still work, with the Classic patterns only (drumchapel.h).
+The output is committed with the repository. Without it the reference, the kernel check and the image build
+still work, with the Classic patterns only (drumchapel.h).
 
 Each file becomes one groove: its whole length (the End of Track, a whole number of sixteenths, at most
 DRUMCHAPEL_MAX_STEPS) at sixteenth resolution, every hit quantised to the nearest sixteenth (a hit that rounds to
@@ -154,8 +153,7 @@ def header(fams):
     lens = [len(v) for fam in fams for v in fam]
     steps = [s for fam in fams for v in fam for s in v]
     rows = [', '.join(str(x) for x in steps[k:k + 32]) for k in range(0, len(steps), 32)]
-    return ('/* grooves_data.h - written by grooves.py from a local folder of licensed MIDI loops.\n'
-            ' * NEVER COMMIT THIS FILE (it is git-ignored): the notes are the pack\'s. */\n'
+    return ('/* grooves_data.h - written by grooves.py from a folder of MIDI loops. */\n'
             f'#define DC_GROOVE_FAMILIES {len(fams)}\n'
             f'#define DC_GROOVE_VARIATIONS {len(lens)}\n'
             f'#define DC_GROOVE_TOTAL {len(steps)}\n'

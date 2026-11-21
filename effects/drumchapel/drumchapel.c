@@ -4,7 +4,7 @@
 #include <math.h>
 #include <string.h>
 
-/* the converted grooves (grooves.py): optional and never committed */
+/* the converted grooves (grooves.py): optional */
 #if defined(__has_include)
 #if __has_include("grooves_data.h")
 #include "grooves_data.h"
@@ -14,7 +14,7 @@
 #define DC_GROOVE_FAMILIES 0
 #define DC_GROOVE_TOTAL 0
 #endif
-/* the Acoustic kit's kick and snare (samples.py): optional and never committed */
+/* the Acoustic kit's kick and snare (samples.py): optional */
 #if defined(__has_include)
 #if __has_include("samples_data.h")
 #include "samples_data.h"

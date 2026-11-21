@@ -1,5 +1,5 @@
 /* drumchapel.h - "Drum Chapel": a basic drum machine block. An original algorithm; no vendor code. The Acoustic
- * kit's kick and snare samples are converted locally from the user's own recordings and never committed.
+ * kit's kick and snare are samples converted by samples.py.
  *
  * The guitar passes through at exactly unity (a non-finite input sample is replaced by 0); synthesised drums
  * are added. Four voices (kick, snare, hat, tom) play grooves of sixteenths, one byte a step (DC_B_*).
@@ -11,8 +11,7 @@
  * until the accumulator has also passed Swing x 1/3 of a sixteenth (Swing 1: a triplet shuffle).
  *
  * Grooves: Groove 0 is Classic, the 20 one-bar patterns below (16 steps); Grooves 1..11 are families of longer
- * grooves converted from a folder of MIDI loops by grooves.py into grooves_data.h, which is git-ignored (the
- * loops are licensed) and optional: without it, or for a family it lacks, a Groove plays the Classic patterns.
+ * grooves converted from a folder of MIDI loops by grooves.py into grooves_data.h, which is optional: without it, or for a family it lacks, a Groove plays the Classic patterns.
  * Pattern picks the pattern (Classic) or the variation (a family: Pattern mod the family's size). The step
  * counter wraps at the groove's length (up to DRUMCHAPEL_MAX_STEPS sixteenths, the groove's own meter); a step
  * looks the groove up when it falls and continues at (step mod the new length), so a change mid-play does not
@@ -38,8 +37,8 @@
  *
  * Samples (the Acoustic kit, kit 6): a definition whose PD word is 0 is a sample (a synthesised one always has
  * PD > 0); its INC word is the sample's first index in the sample table (drumchapel_samples), SWEEP its length.
- * Acoustic's kick and snare are such definitions when samples_data.h exists (samples.py; git-ignored, the
- * recordings are the user's); without it they are Punch's synthesised kick and snare. The table: 16-bit samples
+ * Acoustic's kick and snare are such definitions when samples_data.h exists (samples.py);
+ * without it they are Punch's synthesised kick and snare. The table: 16-bit samples
  * at 48 kHz, two to a word, sample i in word i / 2, its low half when i is even; a sample is q / 32768.
  * A sampled voice plays sample[age] x TE (TE = the knob's level at the hit, no envelope) and stops at the
  * sample's end (TE = 0). A retrigger while it sounds crossfades: the sounding hit keeps playing from its place

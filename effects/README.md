@@ -256,8 +256,7 @@ integer phase, so every sixteenth lands on its exact sample for ever; the first 
 
 **Grooves.** Groove 0, **Classic**, is the 20 original one-bar patterns (Rock, Half-Time, ... Fill). Grooves 1..11
 are families of longer grooves converted from a folder of MIDI drum loops by `drumchapel/grooves.py FOLDER`, which
-writes `drumchapel/grooves_data.h`. That pack is licensed and this repository is public, so the file is git-ignored
-and must never be committed; no committed file names a loop or carries its notes. Without it (a fresh clone), the
+writes `drumchapel/grooves_data.h`. The file is committed. Without it, the
 reference, tests, kernel check and image build all still work and every Groove plays the Classic patterns (as does
 a family the folder lacks). The converter quantises every hit to the nearest sixteenth, keeps each loop's whole
 length and meter (up to 384 sixteenths), drops ghost notes (velocity under 40) and maps the kit's notes to the
@@ -289,8 +288,7 @@ little metal under the hat's noise, a short-drop tom with a dark skin noise; its
 cymbal of the grooves, is the closed hat a little open: the same tone, 1.75 x its decay, 0.7 x its level, so the
 crash and ride on every eighth stay short, with no sustained wash). The samples come from
 the user's own bounces (single hits, possibly of a commercial drum instrument), converted locally by
-`drumchapel/samples.py KICK SNARE` into `drumchapel/samples_data.h`, which is **git-ignored and must never be
-committed** (the repository is public); no committed file holds a sample. Without it Acoustic's kick and snare are
+`drumchapel/samples.py KICK SNARE` into `drumchapel/samples_data.h`, which is committed. Without it Acoustic's kick and snare are
 Punch's synthesised ones and everything still builds and checks. The converter (numpy): mono (the channels' mean),
 48 kHz through a fixed Kaiser-windowed sinc, the start at the quietest sample in the millisecond before the onset
 (30 % of the peak), the end 5 ms before the high band (first difference, 10 ms windows) next rises 6 dB over its
