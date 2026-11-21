@@ -45,8 +45,10 @@ the same channel (HANDOVER, "2026-11-21: User IR slots over USB"):
 - **Old-spec msgpack only** (str16/str32, no str8 or bin).
 - Known ops: 13 IR list, 9 IR import, 10 rename, 12 info, 11 samples, 15 delete, 255/254 edit brackets.
 
-**Missing: the preset ops.** That means preset list, read, write to a slot, load, and set a block or parameter.
-There are no captures of them yet.
+**The preset ops are captured and decoded (2026-11-21)**: list, read, load, set a knob live, block on/off, save,
+write to a slot, rename. See `docs/hxedit-preset-format.md`, "On the wire". Steps 1 and 2 below are done; next is
+step 3. A preset blob is msgpack with each block's **model id** and its **knob values by position**, so custom
+models' knobs can all be written directly.
 
 ### Step 1: capture HX Edit handling presets (needs the unit)
 
@@ -83,7 +85,18 @@ can be matched to its messages. Back up your presets in HX Edit before step 5.
   slot ids as in the firmware's Entry 3, matching `host_params.json`. Confirm it.
 - Write the findings into HANDOVER (a new dated section) and `docs/hxedit-preset-format.md`.
 
-### Step 3: a Python tool first
+### Step 3: a Python tool first (started 2026-11-21: `tools/preset_send.py`)
+
+Done and tested on the unit: `list`, `current`, `read` (blob + readable JSON), `write` (read back identical; a
+one-knob change written to 22D, read back, then the original restored), `rename`, `load`, `knob` (live), `bypass`
+(live). Findings: the unit answers a type-6 request as type 2 when the client hasn't done HX Edit's start-up
+requests, so match answers by id only (one id counter); write, rename and load answer "working" (1) and their
+"done" never comes without a subscription, so check by reading back. HX Edit writes some ints with a fixed size
+(0 as int16 `d1 0000`), so re-encoding a whole blob isn't byte-identical: `set_in_place()` changes one value
+keeping its type. Building new blocks (a custom model where there was none) still needs HX Edit's typing rules for
+a block: next.
+
+Original plan for this step:
 
 Write `tools/preset_send.py`, in the style of `ir_upload.py`. It should list presets, read one into JSON, write one
 from the builder's JSON to a slot, and set one parameter live. Test it on the unit:
