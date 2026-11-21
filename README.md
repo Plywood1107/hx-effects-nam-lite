@@ -14,14 +14,31 @@ If you want them, it can also adds some frankly pretty daft noisy effects for th
 
 **NO FIRMWARE IS HOSTED HERE**. You modify/build the firmware yourself, on your own computer, from Line 6's stock 3.80.0 file.
 
+## Two ways to install
+
+| | **1. The setup page (easy)** | **2. The manual build (command line)** |
+|---|---|---|
+| **For** | Anyone. No programming, nothing to install | People happy with a terminal, Python and `make` |
+| **Where** | **[scottlynn73.github.io/hx-effects-nam-lite](https://scottlynn73.github.io/hx-effects-nam-lite/)** | This repo: [Manual install](#manual-install) |
+| **Runs on** | Chrome or Edge on Mac or Windows | macOS or Linux (Windows: build under WSL) |
+| **Firmware** | Made in your browser from Line 6's file, checked byte for byte against the tested build | Built and verified by `build.py` |
+| **Installing** | From the page over USB, or with Line 6 Updater | `tools/flash.py`, or Line 6 Updater |
+| **NAM captures** | Converted on the page | `tools/nam2ir.py` |
+| **If it goes wrong** | The page's Rescue section puts Line 6's firmware back | [Recovery](#recovery) |
+
+Both give you exactly the same firmware: you pick NAM only, NAM + Amps, or NAM + Amps + Effects. The setup page
+walks you through every step; nothing is uploaded, your firmware file never leaves your computer. If you're not sure
+which to use, use the setup page.
+
 > ## ⚠️ Works on HX Effects firmware 3.80.0 only
 >
 > The build works on one exact file: **`HX_Effects_v3.80.0_0xd97239907.hxf`**, MD5
 > **`7c2ebdf1bffb6bcc5f89dda97f91e40c`**, and refuses any other. Do **not** edit that check to force another
 > firmware through: the wrong addresses can leave the unit unable to boot.
 
-**You do this at your own risk.** Don't attempt it unless you're comfortable with command-line tools and with
-recovering the unit yourself ([Recovery](#recovery)).
+**You do this at your own risk.** The manual build is for people comfortable with command-line tools; everyone
+else should use the [setup page](https://scottlynn73.github.io/hx-effects-nam-lite/). Either way, know how to put
+the unit back on stock firmware ([Recovery](#recovery)) before you start.
 
 > **Unofficial and experimental.** Not affiliated with, endorsed by or supported by Line 6 or Yamaha Guitar Group.
 > Installing modified firmware is at your own risk and may void your warranty.
@@ -32,10 +49,11 @@ recovering the unit yourself ([Recovery](#recovery)).
 |---|---|---|---|
 | **NAM** | NAM A2 Lite, Click (metronome)| `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM.hxf` |
 | **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
-| **NAM + Amps + Effects** | the above + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
+| **NAM + Amps + Effects** | the above + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel (a drum machine) and more | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
 
 Each command builds the image, checks it, and prints its MD5 and the flash command. Flash only an image that
-ends `verified ALL OK`; see [Quick install](#quick-install) for the steps.
+ends `verified ALL OK`; see [Manual install](#manual-install) for the steps. (The setup page makes the same three
+images without any of this.)
 
 ## What's in the images
 
@@ -66,7 +84,9 @@ its amp's name. Up to three amps and preamps per preset. No stock block is repla
 | Bam Crusher | Distortion → Mono (Bitcrusher) | Sequenced bit crusher with stutters |
 | Doom Chug | Distortion → Mono (Pocket Fuzz) | Low drone generator |
 
-## Quick install
+## Manual install
+
+The command-line path. For the easy path, use the [setup page](https://scottlynn73.github.io/hx-effects-nam-lite/) instead.
 
 Needs macOS or Linux (on Windows, build under WSL and flash with Line 6 Updater), Python 3.10+ (check with
 `python3 --version`), and `make` with a C compiler (`xcode-select --install` on a Mac, `build-essential` on Linux).
@@ -119,6 +139,9 @@ never touches the bootloader, and your presets, IRs and settings survive.
 2. Hold the **right arrow (>)** button and power on; keep holding about three seconds.
 3. Open Line 6 Updater, select the HX Effects, **Choose File**, and pick the stock
    `firmware/HX_Effects_v3.80.0_0xd97239907.hxf`. Let it finish, then power-cycle.
+
+Or, in Chrome or Edge, use the **Rescue** section at the bottom of the
+[setup page](https://scottlynn73.github.io/hx-effects-nam-lite/): drop in Line 6's file and it reinstalls it over USB.
 
 If Updater doesn't see the unit, try another USB port or cable (no hub) and hold **>** longer. A failed flash can
 simply be retried. Line 6's own guide: [reset procedures](https://kb.line6.com/helix-rack-lt-fx-stomp-reset-procedures-and-troubleshooting-tricks).
