@@ -62,7 +62,7 @@ static void test_tempo(void)
         CHECK(cnt == (size_t)floor((n - 1) / interval) + 1, "%g BPM: %zu ticks in 10 min, expected %zu",
               bpms[b], cnt, (size_t)floor((n - 1) / interval) + 1);
         for (k = 0; k < cnt; k++) {                      /* each tick: the first sample at/after its time */
-            double ideal = k * interval, e = at[k] - ideal;
+            double ideal = (double)k * interval, e = at[k] - ideal;
             CHECK(e >= 0 && e < 1.0, "%g BPM: tick %zu at %u, ideal %.3f", bpms[b], k, at[k], ideal);
             if (fabs(e) > worst) worst = fabs(e);
             if (e < 0 || e >= 1.0) break;
