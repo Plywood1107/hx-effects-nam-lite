@@ -10,7 +10,7 @@ This repo adds amp modelling capability to the Line 6 HX Effects in two ways:
 
 The repo includes tools to flash new firmware to the unit independent of Line 6 tools, and to convert NAM files so they can be loaded into the IR storage on the unit.
 
-If you want them, it can also adds some frankly pretty daft noisy effects for those who like to make sounds that bear no resemblance to guitars- glitchy, stuttering, pure boggin' sounds only a twisted person like me could appreciate. The 'Doom Chug' is a drone maker that sounds like a downtuned set of bagpipes being tortured, especially if you pass it through the Geiger, Corrupt, Commander or Ottobit effects. Pure hummin'! 
+If you want them, it can also adds some frankly pretty daft noisy effects for those who like to make sounds that bear no resemblance to guitars- glitchy, stuttering, pure boggin' sounds only a twisted person like me could appreciate. The 'Doom Chug' is a drone maker that sounds like a downtuned set of bagpipes being tortured, especially if you pass it through the Bolt, Rocket!, Quality Polis, Garrrry Tank or Bam Crusher effects. Pure hummin'! 
 
 **NO FIRMWARE IS HOSTED HERE**. You modify/build the firmware yourself, on your own computer, from Line 6's stock 3.80.0 file.
 
@@ -32,7 +32,7 @@ recovering the unit yourself ([Recovery](#recovery)).
 |---|---|---|---|
 | **NAM** | NAM A2 Lite, Click (metronome)| `python3 build.py nam` | `build/HX_Effects_v3.80.0_NAM.hxf` |
 | **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps | `python3 build.py amps` | `build/HX_Effects_v3.80.0_NAM_Amps.hxf` |
-| **NAM + Amps + Effects** | the above + Geiger, Commander, Corrupt, Ottobit, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
+| **NAM + Amps + Effects** | the above + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug | `python3 build.py full` | `build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf` |
 
 Each command builds the image, checks it, and prints its MD5 and the flash command. Flash only an image that
 ends `verified ALL OK`; see [Quick install](#quick-install) for the steps.
@@ -60,10 +60,10 @@ its amp's name. Up to three amps and preamps per preset. No stock block is repla
 | Effect | Where | What it is |
 |---|---|---|
 | Click | Delay → Mono (Mod/Chorus Echo) | Metronome, synced to tap tempo (in every build) |
-| Geiger | Distortion → Mono (Megaphone) | Bit crusher with 16 shaping curves |
-| Commander | Distortion → Mono (Xenomorph Fuzz) | Square-wave octave fuzz |
-| Corrupt | Distortion → Legacy (Octave Fuzz) | Tracking square-wave synth |
-| Ottobit | Distortion → Mono (Bitcrusher) | Sequenced bit crusher with stutters |
+| Bolt, Rocket! | Distortion → Mono (Megaphone) | Bit crusher with 16 shaping curves |
+| Garrrry Tank | Distortion → Mono (Xenomorph Fuzz) | Square-wave octave fuzz |
+| Quality Polis | Distortion → Legacy (Octave Fuzz) | Tracking square-wave synth |
+| Bam Crusher | Distortion → Mono (Bitcrusher) | Sequenced bit crusher with stutters |
 | Doom Chug | Distortion → Mono (Pocket Fuzz) | Low drone generator |
 
 ## Quick install
