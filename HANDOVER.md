@@ -267,6 +267,24 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
   subtree split --prefix web` of main). Install and Rescue from the page tested on the unit by the user (2026-11-21).
 - **Drum data** (`grooves_data.h`, `samples_data.h`) is committed now (user: none of it is private).
 
+## 2026-11-21: User IR slots over USB (tools/ir_upload.py, the setup page's step 4)
+
+From two captures of HX Edit (`tools/usb/capture_hxedit.sh`: it runs HX Edit with the logger, which needs a copy of
+HX Edit.app ad-hoc re-signed without the hardened runtime, `HX_EDIT=<copy>`; the logger is built universal against
+HX Edit's own libusb). Same channel as flash.py (port 0x1001 -> 0x03ef); select service 2 with
+`010002000100000002`; then [u16 1][u16 type][u32 n] msgpack, requests {102 id, 100 op, 101 args}, answers
+{102, 103 status, 104 result}. **Old-spec msgpack only** (str16/str32 raw, no str8/bin: refused with {111: -3}).
+- op 13 {101: 2}: IR list [{112 index, 109 name, 104 MD5 of the samples}].
+- op 9 import {112 index, 113 sum of the samples' LE 32-bit words, 109 name, 114 1, 115 3, 123 F, 124 F, 125 0,
+  110 samples (the .wav data chunk)}: answers 1 "working"; the "done" message only reaches a subscribed client, so
+  the tools wait for the list to show the MD5. A wrong 113 renames the slot and keeps no samples.
+- op 10 rename {112, 109}; op 15 delete {112}; op 12 info {112}; op 11 samples {112, 101: 2} (answered in a
+  message of type 10240). Copy = 12 + 11 from one slot, 9 into the other (HX Edit does it that way).
+- **Never ask op 11/12 for an empty slot**: the unit never answers and its USB message channel stays dead until a
+  power cycle with USB unplugged (2026-11-21). Both tools check the list first.
+- Tested on the unit: put/rename/copy/delete/get (Python), and the page's code (web/flasher.js) from Node with the
+  `usb` package's WebUSB and from Chrome (user).
+
 ## Open / next
 
 1. ~~Verify the standalone build on the unit~~ — done 2026‑11‑03 (flashed twice, boots). Still worth a

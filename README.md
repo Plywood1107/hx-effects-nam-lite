@@ -23,7 +23,7 @@ If you want them, it can also adds some frankly pretty daft noisy effects for th
 | **Runs on** | Chrome or Edge on Mac or Windows | macOS or Linux (Windows: build under WSL) |
 | **Firmware** | Made in your browser from Line 6's file, checked byte for byte against the tested build | Built and verified by `build.py` |
 | **Installing** | From the page over USB, or with Line 6 Updater | `tools/flash.py`, or Line 6 Updater |
-| **NAM captures** | Converted on the page | `tools/nam2ir.py` |
+| **NAM captures** | Converted on the page and sent to the unit over USB; the unit's IR slots can be listed, renamed, copied and cleared there too | `tools/nam2ir.py`, then `tools/ir_upload.py` or HX Edit |
 | **If it goes wrong** | The page's Rescue section puts Line 6's firmware back | [Recovery](#recovery) |
 
 Both give you exactly the same firmware: you pick NAM only, NAM + Amps, or NAM + Amps + Effects. The setup page
@@ -120,6 +120,9 @@ Needs macOS or Linux (on Windows, build under WSL and flash with Line 6 Updater)
    In HX Edit's Impulses tab (first switch to a preset with no NAM block in it), import the `.wav` into a User IR
    slot **1–21**, then set the NAM block's Model knob to that slot. `--match` levels captures to the same
    loudness. Demo captures, already converted, are in `captures/`.
+
+   Or, without HX Edit (close it first): `python tools/ir_upload.py put 5 "My Amp.wav"` writes it into slot 5 and
+   reads it back. `ir_upload.py list` shows the slots; `rename`, `copy`, `delete` and `get` do the rest.
 
 ## Limits
 
