@@ -2,17 +2,19 @@
 """One command for each HX Effects build. Each builds the image, then checks it with the repo's verifier;
 only an image that ends "ALL OK" should be flashed.
 
-usage: python3 build.py nam|amps|full [--quick] [-- extra options for the builder]
+usage: python3 build.py nam|amps|full [--quick] [--flat-tuner] [-- extra options for the builder]
 
   nam    NAM A2 Lite + Click                                   -> build/HX_Effects_v3.80.0_NAM.hxf
   amps   NAM A2 Lite + Click + 111 amps + 112 preamps          -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
-  full   NAM A2 Lite + Click + amps + preamps + Geiger, Commander, -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
-         Corrupt, Ottobit, Doom Chug
+  full   NAM A2 Lite + Click + amps + preamps + the effects     -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
+         (Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel, ...)
 
 nam and amps use build_nam_click.py --nam-host regal, full uses build_all.py; amps and full then add the amps
 and preamps (build_amps.py --set all --preamps all: Distortion > Amps, EQ > Preamps; checked by tools/verify_amps.py, with the USB log reader tools/memwin.py).
 
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
+Every image's tuner shows sharps (A#) instead of flats (Bb) (tools/tuner_sharps.py, checked); --flat-tuner keeps
+the stock flats.
 Before the build, build_effects.py and build_click.py make the single NAM and Click images the verifiers
 compare against; --quick skips them when they already exist. Options after -- go to the builder, e.g.
 `python3 build.py full -- --with commander` (fewer effects) or `python3 build.py nam -- --nam-host ir`.
@@ -78,6 +80,11 @@ def main():
         rel = os.path.relpath(out, HERE)
         if 'ALL OK' not in report.splitlines()[-1]:
             sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
+    if '--flat-tuner' not in argv:                   # the tuner shows sharps (A#), not flats (Bb): tools/tuner_sharps.py
+        log = step(['tools/tuner_sharps.py', os.path.relpath(out, HERE)], quiet=False)
+        if 'ALL OK' not in log.splitlines()[-1]:
+            sys.exit('\nbuild.py: the tuner patch FAILED its check: do not flash it.')
+        out = os.path.join(HERE, log.splitlines()[-3].strip())
     named = os.path.join(HERE, 'build', f'HX_Effects_v3.80.0_{final}.hxf')
     shutil.copyfile(out, named)
     out, rel = named, os.path.relpath(named, HERE)

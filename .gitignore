@@ -14,9 +14,3 @@ tools/usb/usblog.dylib
 
 # Claude Code agent worktrees
 .claude/
-
-# Drum Chapel's grooves, converted from a licensed MIDI pack (effects/drumchapel/grooves.py): never commit
-effects/drumchapel/grooves_data.h
-
-# Drum Chapel's Acoustic kit samples, converted from the user's own recordings (effects/drumchapel/samples.py): never commit
-effects/drumchapel/samples_data.h

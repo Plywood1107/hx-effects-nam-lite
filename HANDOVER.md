@@ -246,6 +246,27 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
   then the small follow‑up edits from the chat: Blob0 byte‑order assert, Heap 6 `0x3230ca`, harness
   pointers, `P_SLOT`‑based fixed SDRAM, mix/cut overrides, `strip_title`).
 
+## 2026-11-21: tuner sharps, DSP costs, renames, setup page
+
+- **Tuner sharps** (`tools/tuner_sharps.py`, run by `build.py` unless `--flat-tuner`; user: looks right on the unit).
+  Letters are text from 12 pointers at 0x280a43c0 (now C C D D E F F G G A A B). The sign the HX Effects shows is a
+  6x19 1-bit scribble-strip icon (set 10, index 11, at 0x280986d8; used only by the tuner), now a '#'. Entry 8's
+  Tuner_Flat (the Stomp-style picture) is redrawn too but is not what this unit's tuner shows.
+- **Per-effect overlay DSP costs** (`build_all.py` OVL_COST: Drum Chapel 1550, Ottobit 1300, Pure Whitey 1100,
+  Greasy/Bethblahem/Puggy 1000, Doom Chug 900). A flat 700 let Commander + Doom Chug + Drum Chapel + Pure Whitey
+  crash the unit (2026-11-18); a flat 2300 was too strict (user).
+- **Display names** (user, 2026-11-21): Geiger "Bolt, Rocket!", Commander "Garrrry Tank", Corrupt "Quality Polis",
+  Ottobit "Bam Crusher". Display only: the HD2_ model names and the code's names stay, so presets keep working.
+- **8 snapshots: not feasible.** snapshotModel keeps 4 fixed 0x26c-byte records with `cmp #4` loops at about a dozen
+  sites; preset storage, the footswitch UI and HX Edit all assume 4.
+- **Setup page** (`web/`, branch `setup-page`): a browser page that makes NAM / NAM + Amps / full from the user's
+  stock file with a recipe (`tools/recipe.py make BUILD.hxf web/recipe-<mode>.bin` after every release build; the
+  page checks the result's MD5), installs it over WebUSB (`web/flasher.js`, same bytes as `flash.py`) or via Updater,
+  converts .nam captures (level-matched), and has a Rescue section that reflashes stock. Unit image now `06fee4c9`
+  (full), flashed with flash.py. Hosted at https://scottlynn73.github.io/hx-effects-nam-lite/ (branch gh-pages = `git
+  subtree split --prefix web` of main). Install and Rescue from the page tested on the unit by the user (2026-11-21).
+- **Drum data** (`grooves_data.h`, `samples_data.h`) is committed now (user: none of it is private).
+
 ## Open / next
 
 1. ~~Verify the standalone build on the unit~~ — done 2026‑11‑03 (flashed twice, boots). Still worth a
@@ -435,8 +456,7 @@ lists.**
 Pattern became a plain "1".."20" list in slot 3): 0 = Classic (the 20 patterns, bit for bit as before, the
 default), 1..11 = families of longer grooves (Doublerino, Fake 1st, Proggy 13/4, Crazy 14/4, Antibeat, Free Beat,
 Chaos 29/4, Dum Dum, Dam Dam, Tomapalooza, Tomathon) converted from a commercial MIDI loop pack by
-`effects/drumchapel/grooves.py FOLDER` into `effects/drumchapel/grooves_data.h`. **That file is git-ignored and must
-never be committed** (the repo is public); no committed file names a loop or holds its notes. Without it every
+`effects/drumchapel/grooves.py FOLDER` into `effects/drumchapel/grooves_data.h`. It is committed (the user lifted the never-commit rule on 2026-11-21). Without it every
 Groove plays Classic and everything still builds and checks. Each groove keeps its full length and meter (up to 384
 sixteenths), quantised to sixteenths; the step counter wraps at its length, and a Groove/Pattern change continues at
 (step mod the new length). A fourth voice, Tom (four pitches, at the Kick knob's level, designed per kit), and an
@@ -459,8 +479,7 @@ recorded samples, its hat, tom and open hat are synthesised (the open hat, which
 grooves, is its closed hat a little open: same tone, 1.75 x the decay, 0.7 x the level; the first version's long
 wash sounded bad on the renders). The samples are the user's own bounces (a kick and a snare from their Logic
 folder, possibly of a commercial drum plugin), converted by `effects/drumchapel/samples.py KICK SNARE`
-into `effects/drumchapel/samples_data.h`, which is **git-ignored and must never be committed** (no committed file
-holds a sample); without it Acoustic plays Punch's synthesised kick and snare and everything builds and checks
+into `effects/drumchapel/samples_data.h`, which is committed (never-commit rule lifted 2026-11-21); without it Acoustic plays Punch's synthesised kick and snare and everything builds and checks
 (verified in a scratch copy). Trim: the first hit only, from a near-zero sample just before the onset, to 5 ms before
 the high band rises again, with a raised-cosine fade over the last 30 %: kick 226 ms (the bounce's next kick starts at
 238 ms), snare 229 ms from its onset 25.4 ms in (a noise burst follows at 260 ms); mono, 48 kHz (fixed Kaiser sinc),

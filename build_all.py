@@ -61,14 +61,17 @@ for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sha
 import build_click as bc  # noqa: E402
 import build_effects as be  # noqa: E402
 import build_nam_click as bnc  # noqa: E402
-import grooves as dc_grooves  # noqa: E402  (Drum Chapel's family names; the groove data itself is git-ignored)
+import grooves as dc_grooves  # noqa: E402  (Drum Chapel's family names; the groove data is grooves_data.h)
 
 STOCK_MD5 = '7c2ebdf1bffb6bcc5f89dda97f91e40c'
 NAM_PRIM, CLICK_PRIM, GEIGER_PRIM = 0x9c75, 0x0128, 0x012e
 NAM_SLOTS = 2
 
 GEIGER_TAKEOVER = 'HD2_DistMegaphoneMono'
-GEIGER_NAME, GEIGER_DISPLAY = 'HD2_DistGeiger', 'Geiger'
+# Display names (what the unit shows) were changed by the user on 2026-11-21: Geiger -> "Bolt, Rocket!", Commander ->
+# "Garrrry Tank", Corrupt -> "Quality Polis", Ottobit -> "Bam Crusher". The internal model names (HD2_Dist...) and
+# the code's names stay, so presets that already use these blocks keep working.
+GEIGER_NAME, GEIGER_DISPLAY = 'HD2_DistGeiger', 'Bolt, Rocket!'
 GEIGER_COST = 500                      # measured worst 2,528 of ~150,000 cycles per call (1.7 %), x3
 CURVE_NAMES = ['Linear', 'Soft', 'Hard', 'Sine Fold', 'Tri Fold', 'Full Wave', 'Half Wave', 'Steps',
                'Asym', 'Cheby 3', 'Cheby 5', 'Sine', 'Root', 'Spline', 'Ring', 'Gate']
@@ -177,7 +180,7 @@ DRUMCHAPEL_PATTERNS = ['Rock', 'Half-Time', 'Four Floor', 'Disco', 'Shuffle', 'M
                        'Bossa', 'One Drop', 'Punk', 'Blast', 'Sludge', 'Trap', 'Two-Step', 'Gallop', 'Hats Only',
                        'Kick Only', 'Fill']
 DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty', 'Acoustic']   # Acoustic: sampled kick and snare
-# (effects/drumchapel/samples.py; git-ignored samples_data.h, Punch's synthesised ones without it)
+# (effects/drumchapel/samples.py; samples_data.h, Punch's synthesised ones without it)
 # Groove 0 plays the 20 patterns above; 1..11 the families converted by effects/drumchapel/grooves.py (Classic when
 # its git-ignored output is missing), Pattern then the variation (mod the family's size)
 DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES]
@@ -207,12 +210,12 @@ PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey
 EFFECTS = {
     'geiger': dict(takeover=GEIGER_TAKEOVER, name=GEIGER_NAME, display=GEIGER_DISPLAY, cost=GEIGER_COST, prim=GEIGER_PRIM,
                    params=GEIGER_PARAMS, entry='GEIGER_ENTRY'),
-    'commander': dict(takeover=COMMANDER_TAKEOVER, name='HD2_DistCommander', display='Commander', cost=700, prim=0x0100,
+    'commander': dict(takeover=COMMANDER_TAKEOVER, name='HD2_DistCommander', display='Garrrry Tank', cost=700, prim=0x0100,
                       params=COMMANDER_PARAMS, entry='COMMANDER_ENTRY'),   # measured worst 3,441 cycles of ~150,000 (2.3 %)
-    'corrupt': dict(takeover=CORRUPT_TAKEOVER, name='HD2_DistCorrupt', display='Corrupt', cost=700, prim=0x0838,
+    'corrupt': dict(takeover=CORRUPT_TAKEOVER, name='HD2_DistCorrupt', display='Quality Polis', cost=700, prim=0x0838,
                     params=CORRUPT_PARAMS, entry='CORRUPT_ENTRY'),         # measured worst 3,545
     # an overlay: the code and data travel inside Blob 0; only its stub is in the boot stream (ovl_stub_kernel.py)
-    'ottobit': dict(takeover='HD2_DistBitcrusherMono', name='HD2_DistOttobit', display='Ottobit', cost=700, prim=0x2392,
+    'ottobit': dict(takeover='HD2_DistBitcrusherMono', name='HD2_DistOttobit', display='Bam Crusher', cost=700, prim=0x2392,
                     params=OTTOBIT_PARAMS, entry='OVL_ENTRY_OTTOBIT'),   # measured mean 2,450 cycles of ~150,000
     'syntax': dict(takeover='HD2_DistPocketFuzzMono', name='HD2_DistSyntax', display='Syntax', cost=1200, prim=0x238F,
                    params=SYNTAX_PARAMS, entry='OVL_ENTRY_SYNTAX'),   # measured worst 5,670
@@ -245,6 +248,15 @@ BLOB0_WORDS_OVL = 0x7E000              # six host graphs and the overlay payload
 # each, above NAM's slots, in this order. With more overlays than Ottobit, Blob 0's buffer takes all the DDR2 left below
 # DDR2_LIMIT (the old Heap 6 end, under the User IR store at 0x2a912c) after NAM's slots and the rings.
 OVERLAYS = ('ottobit', 'syntax', 'doomchug', 'purewhitey', 'greasy', 'drumchapel', 'bethblahem', 'puggy')
+# The cost the unit is told for each overlay effect (Entry 0 Table 1; NAM's DSP_COST scale). Alone an overlay needs
+# only its kernel (a few %), but with two or more in a preset each is copied in on every call: about 25 cycles a word
+# (meter, 2026-11-10: ~28,000 cycles for ~1,100 words, ~19 % of a call). At a flat 700 the unit let Commander + Doom
+# Chug + Drum Chapel + Pure Whitey into one preset and the DSP locked up (2026-11-18); a flat 2,300 was too strict
+# (user). So: about 300 for the kernel plus 1 per word copied in (code + data, this build's manifest), to the 50.
+OVL_COST = dict(ottobit=1300, syntax=1300, doomchug=900, bethblahem=1000, puggy=1000, greasy=1000, drumchapel=1550,
+                purewhitey=1100)
+for _k in OVERLAYS:
+    EFFECTS[_k]['cost'] = OVL_COST[_k]
 RING_OVERLAYS = ('ottobit', 'purewhitey')
 DDR2_LIMIT = 0x2A8DF6
 GEIGER_CURVES_WORDS = 16 * 65

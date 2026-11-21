@@ -4,9 +4,7 @@
 
 usage: samples.py KICK SNARE [-o samples_data.h] [--kick-end MS] [--snare-end MS] [--wav DIR]
 
-The recordings are the user's own bounces (possibly of a commercial drum instrument) and the repository is public,
-so the output is git-ignored and must never be committed; nothing in the repository carries a sample of them.
-Without the output the reference, the kernel check and the image build still work: the Acoustic kit then plays the
+The output is committed with the repository. Without it the reference, the kernel check and the image build still work: the Acoustic kit then plays the
 Punch kit's synthesised kick and snare (drumchapel.h).
 
 Each file (AIFF or WAV, 16/24/32-bit integer PCM, any rate, mono or stereo) becomes one sample:
@@ -148,8 +146,7 @@ def header(kick, snare):
     def arr(name, v):
         rows = [', '.join(str(s) for s in v[k:k + 24]) for k in range(0, len(v), 24)]
         return f'static const short {name}[{len(v)}] = {{\n    ' + ',\n    '.join(rows) + '\n};\n'
-    return ('/* samples_data.h - written by samples.py from local drum recordings (the Acoustic kit).\n'
-            ' * NEVER COMMIT THIS FILE (it is git-ignored): the samples are the recordings\'. */\n'
+    return ('/* samples_data.h - written by samples.py from local drum recordings (the Acoustic kit). */\n'
             f'#define DC_SAMPLE_RATE {RATE}\n#define DC_SAMPLE_KICK_N {len(kick)}\n#define DC_SAMPLE_SNARE_N {len(snare)}\n'
             + arr('DC_SAMPLE_KICK', kick) + arr('DC_SAMPLE_SNARE', snare))
 
