@@ -36,7 +36,7 @@ void sig_sweep(float *x, size_t n, float rate, float f0, float f1, float amp)
     double T = (double)n / rate, k = log((double)f1 / f0);
     size_t i;
     for (i = 0; i < n; i++) {
-        double t = i / (double)rate;
+        double t = (double)i / (double)rate;
         x[i] = (float)(amp * sin(2 * PI * f0 * T / k * (exp(t / T * k) - 1)));
     }
 }

@@ -67,7 +67,7 @@ static void test_curves(void)
     for (c = 0; c < GEIGER_CURVES; c++) {
         double worst = 0;
         for (i = 0; i <= 2000; i++) {
-            float x = -1.0f + i / 1000.0f, y = geiger_curve_exact(c, x), t = geiger_curve(c, x);
+            float x = -1.0f + (float)i / 1000.0f, y = geiger_curve_exact(c, x), t = geiger_curve(c, x);
             CHECK(isfinite(y) && y >= -1.0f && y <= 1.0f, "curve %d out of range at %g: %g", c, x, y);
             if (c != 7 && fabs(t - y) > worst) worst = fabs(t - y);     /* 7 "steps" has jumps */
         }
@@ -78,7 +78,7 @@ static void test_curves(void)
         for (d = 0; d < c; d++) {
             double m = 0;
             for (i = 0; i <= 2000; i++) {
-                float x = -1.0f + i / 1000.0f;
+                float x = -1.0f + (float)i / 1000.0f;
                 double e = fabs(geiger_curve_exact(c, x) - geiger_curve_exact(d, x));
                 if (e > m) m = e;
             }
@@ -94,14 +94,14 @@ static void test_quantizer(void)
         float levels[600];
         int n = 0, j;
         for (i = 0; i <= 4000; i++) {
-            float y = geiger_quantize(-1.2f + 2.4f * i / 4000.0f, b);
+            float y = geiger_quantize(-1.2f + 2.4f * (float)i / 4000.0f, b);
             for (j = 0; j < n && levels[j] != y; j++) ;
             if (j == n && n < 600) levels[n++] = y;
         }
         CHECK(n <= (1 << b) + 1 && n >= (1 << b), "bits %d: %d levels", b, n);
     }
     for (i = 0; i <= 1000; i++) {
-        float x = -1.0f + i / 500.0f;
+        float x = -1.0f + (float)i / 500.0f;
         CHECK(fabsf(geiger_quantize(x, 16) - x) <= 1.0f / 65536 + 1e-7f, "16-bit error at %g", x);
     }
 }
@@ -211,7 +211,7 @@ static void test_decimator(void)
             fx_geiger.process(&s, &p, &x, &y, 1);
             if (s.held != last) { updates++; last = s.held; }
         }
-        CHECK(labs((long)updates - (long)(rates[k] * n / SR)) <= 1, "rate %g: %zu holds in 1 s", rates[k], updates);
+        CHECK(labs((long)updates - (long)(rates[k] * (float)n / SR)) <= 1, "rate %g: %zu holds in 1 s", rates[k], updates);
     }
 }
 
