@@ -93,8 +93,11 @@ one-knob change written to 22D, read back, then the original restored), `rename`
 requests, so match answers by id only (one id counter); write, rename and load answer "working" (1) and their
 "done" never comes without a subscription, so check by reading back. HX Edit writes some ints with a fixed size
 (0 as int16 `d1 0000`), so re-encoding a whole blob isn't byte-identical: `set_in_place()` changes one value
-keeping its type. Building new blocks (a custom model where there was none) still needs HX Edit's typing rules for
-a block: next.
+keeping its type. **Building presets works (2026-11-21):** `preset_send.py build SLOT spec.json` clears a base preset's blocks and
+footswitches, adds blocks by firmware model name with knob values by position or name, assigns footswitches, writes
+and reads back. Tested on the unit: 23A/23B "API Test" with NAM A2 Lite (Model 5, Input 0.6 …) and Bam Crusher
+(all eight knobs, most of them "unit only" before), on FS1/FS2: knobs and footswitches right (user). `models` lists
+what an image offers. Details: `docs/hxedit-preset-format.md`, "Building presets". Next: step 4, the page.
 
 Original plan for this step:
 

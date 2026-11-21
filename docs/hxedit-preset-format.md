@@ -114,3 +114,25 @@ models' own knobs are just positions in their Entry 3 parameter lists, so a blob
 set every one of them; no `.hlx` and no HX Edit in the way.
 
 Not captured yet: saving to a *different* slot (save-as), deleting a preset, snapshots, IR/amp blocks in a blob.
+
+### Building presets (2026-11-21, `tools/preset_send.py build`, tested on the unit)
+
+Worked out from all 91 presets on the unit (read with op 4; not committed: they're the user's):
+- **A block** is `{19: 6, 20: {24: {23: False, 25: preset id, 26: -1}, 9: block type, 10: on, 11: {2: n, 3: m,
+  4: [values]}, 12: {2: 0, 3: 0, 4: []}}`. Plain msgpack (old spec, float32) reproduces all 460 blocks byte for byte.
+  An empty position is `{19: 8, 20: None}`.
+- **preset id** = Entry 0 Table 1's id for the model's name index (e.g. NAM's host Regal Bass DI Mono = 799);
+  **block type** = the model's browser item byte 0 (1 most effects, 8 delays/reverbs, 17 amps, 19 IR, 23 synths,
+  24 Ratchet-style); **values** = the model's Entry 3 parameters in order, typed 1 bool / 2 int / 3 float. In a
+  built image a custom effect's host model carries the custom effect's own parameters, so they are its knobs.
+- Block types 8, 9, 13 end their values with a Trails switch: the model's own last parameter when it is DryThru/
+  Trails, else one more bool. There, m = n − 1; elsewhere m = n.
+- **The 12-word table** after "l6-helix" holds section positions (ends of the top-level values and the map start); on
+  a change of size, every entry after the change moves by the same amount.
+- **Snapshots** (key 10 → 10 → [snapshot] → 3 → [position] → [None, on]) keep each position's on/off; a new block
+  gets its state in every snapshot.
+- **Footswitches** (key 3 → 8 → [switch 0..5]) are `[{10: 7, 11: {0: 1, 5: label, 6: LED colour, 7: False,
+  8: block position}, 12: False, 14: '', 13: False, 16: 0, 15: False}]` as the unit writes them, or None. A preset
+  imported from .hlx carried `10: 0` entries with an extra key that the unit did not honour on a rebuilt preset.
+- Not covered yet: IR and cab blocks (more fields; a hash key 27), amps, path B, snapshot-specific knob values,
+  controller (expression) assignments.

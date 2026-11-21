@@ -12,6 +12,17 @@ usage:
   .venv/bin/python tools/preset_send.py load SLOT               switch the unit to that preset
   .venv/bin/python tools/preset_send.py knob BLOCK KNOB VALUE   set a knob on the loaded preset, live
   .venv/bin/python tools/preset_send.py bypass BLOCK on|off     turn a block of the loaded preset on or off
+  .venv/bin/python tools/preset_send.py build SLOT SPEC.json [--base SLOT] [--image FILE.hxf]
+                                                                build a preset from SPEC and write it to SLOT
+  .venv/bin/python tools/preset_send.py models [--image FILE.hxf]
+                                                                the models the image lists: name, preset id, knobs
+
+SPEC: {"name": "My Preset", "blocks": [{"pos": 1, "model": "HD2_DistRegalBassDIMono", "on": true,
+       "values": [5, 0.6, ...] or {"Drive": 0.6, ...}, "footswitch": 1, "label": "NAM"}, ...]}
+  model is a firmware model name (models lists them; a custom effect is listed under the stock block it took over,
+  with its own knobs); values are by position or by knob name, the rest stay at the model's defaults; footswitch is
+  1..6. The base preset (default: SLOT itself, else 1A) gives the snapshot, tempo and global settings; its blocks and
+  footswitches are cleared first. --image is the firmware on the unit (default build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf).
 SLOT is an index (0..127) or bank/slot like 22D. Close HX Edit first.
 
 Every request here was seen in a capture of HX Edit (docs/hxedit-preset-format.md, "On the wire"); nothing else is
@@ -137,13 +148,13 @@ def parse_blob(blob):
     magic, table, body = next(u), next(u), next(u)
     if magic.rstrip(b'\0') != b'l6-helix':
         raise SystemExit('not a preset blob')
-    return struct.unpack('<12I', table), body
+    return struct.unpack(f'<{len(table) // 4}I', table), body
 
 
 def build_blob(table, body):
     """parse_blob's inverse, encoded as HX Edit does (old-spec msgpack, float32)."""
     pk = lambda x: msgpack.packb(x, use_bin_type=False, use_single_float=True)
-    return pk(b'l6-helix\0') + pk(struct.pack('<12I', *table)) + pk(body)
+    return pk(b'l6-helix\0') + pk(struct.pack(f'<{len(table)}I', *table)) + pk(body)
 
 
 def locate(blob):
@@ -212,6 +223,204 @@ def set_in_place(blob, path, value):
     else:
         raise SystemExit(f'{path}: cannot change a value of msgpack type 0x{t:02x} in place to {value!r}')
     return bytes(b)
+
+
+def spans(blob):
+    """{path: (start, end)} for every node of the preset map (containers too), in the blob's own bytes."""
+    out = {}
+    u = msgpack.Unpacker(raw=True, strict_map_key=False)
+    u.feed(blob)
+    u.unpack()
+    u.unpack()
+    start = u.tell()
+
+    def end_of(o):
+        v = msgpack.Unpacker(raw=True, strict_map_key=False)
+        v.feed(blob[o:])
+        v.unpack()
+        return o + v.tell()
+
+    def walk(o, path):
+        t = blob[o]
+        if t & 0xF0 == 0x80 or t in (0xDE, 0xDF):
+            n, p = (t & 15, o + 1) if t & 0xF0 == 0x80 else (int.from_bytes(blob[o + 1:o + (3 if t == 0xDE else 5)], 'big'), o + (3 if t == 0xDE else 5))
+            for _ in range(n):
+                ke = end_of(p)
+                k = msgpack.unpackb(blob[p:ke], raw=True)
+                p = walk(ke, path + (k,))
+        elif t & 0xF0 == 0x90 or t in (0xDC, 0xDD):
+            n, p = (t & 15, o + 1) if t & 0xF0 == 0x90 else (int.from_bytes(blob[o + 1:o + (3 if t == 0xDC else 5)], 'big'), o + (3 if t == 0xDC else 5))
+            for i in range(n):
+                p = walk(p, path + (i,))
+        else:
+            p = end_of(o)
+        out[path] = (o, p)
+        return p
+    walk(start, ())
+    return out
+
+
+def replace_node(blob, path, value):
+    """blob with the node at path replaced by value (encoded as HX Edit does), the section table kept right."""
+    o, e = spans(blob)[tuple(path)]
+    new = msgpack.packb(value, use_bin_type=False, use_single_float=True)
+    table, _ = parse_blob(blob)
+    delta = len(new) - (e - o)
+    out = blob[:o] + new + blob[e:]
+    table = [x + delta if x > o else x for x in table]
+    head = msgpack.packb(b'l6-helix\0', use_bin_type=False)
+    tbl = msgpack.packb(struct.pack(f'<{len(table)}I', *table), use_bin_type=False)
+    return head + tbl + out[len(head) + len(tbl):]
+
+
+def footswitch(pos, label, colour=525824):
+    """One footswitch entry turning the block at pos on and off, as the unit writes it (preset 1B)."""
+    return [{10: 7, 11: {0: 1, 5: label.encode('utf-8') + b'\0', 6: colour, 7: False, 8: pos}, 12: False, 14: b'\0',
+             13: False, 16: 0, 15: False}]
+
+
+TRAILS_TYPES = (8, 9, 13)        # block types whose value list ends with a Trails switch (n2 = n3 + 1)
+EMPTY_BLOCK = msgpack.packb({19: 8, 20: None})
+
+
+def model_table(image):
+    """{name: {pid, btype, params}} for the models a firmware image lists, and the same keyed by preset id (pid).
+    pid: what a preset stores (Entry 0 Table 1); btype: the browser item's first byte, which a preset stores as
+    block field 9; params: the model's knobs in order (Entry 3; in a built image a custom effect's host carries the
+    custom effect's knobs), each {name, type (1 switch, 2 whole number, 3 decimal), default, min, max}."""
+    sys.path.insert(0, os.path.dirname(HERE))
+    import patch_amp as pa
+    arc, _ = pa.load_l6ia_from_any(image)
+    e0 = bytearray(pa.get_entry_swapped(arc, 0))
+    info = pa.parse_entry3_full(bytes(pa.get_entry_swapped(arc, 3)))
+    A, segs = pa.EFFECTS_E0, pa._parse_e0_segments_any(e0)
+    fo = lambda va, n=4: pa._e0_vaddr_to_foff(segs, va, n)
+    u32 = lambda va: struct.unpack_from('<I', e0, fo(va))[0]
+    pid = {}
+    for i in range(A.TAB1_CNT):
+        n, p, _, _ = struct.unpack_from('<IHHI', e0, fo(A.TAB1_BASE + 12 * i, 12))
+        pid[n] = p
+    btype = {}
+    for sl in range(52):
+        lp, lc = u32(A.BLIST_PTR_TAB + 4 * sl), u32(A.BLIST_CNT_TAB + 4 * sl)
+        for k in range(lc if lp else 0):
+            btype[u32(lp + 48 * k + 4)] = e0[fo(lp + 48 * k, 1)]
+    by_name, by_pid = {}, {}
+    for m in info['models']:
+        ni = m['words'][2]
+        if ni in pid and ni in btype:
+            e = {'name': m['name'], 'display': m['displayName'], 'pid': pid[ni], 'btype': btype[ni],
+                 'params': [{k: p[k] for k in ('name', 'type', 'default', 'min', 'max')} for p in m['params']]}
+            by_name[m['name']] = e
+            by_pid.setdefault(pid[ni], e)
+    return by_name, by_pid
+
+
+def block_value(t, v):
+    if isinstance(v, float) and v != v:           # some knobs have no default (NaN) in the firmware
+        v = 0
+    return bool(v) if t == 1 else int(round(v)) if t == 2 else float(v)
+
+
+def make_block(model, values=None, on=True):
+    """A block map for a model_table() entry: knob values by position (defaults where values is None or shorter),
+    with a Trails switch (off) for delays/reverbs that have no DryThru-style last knob of their own."""
+    ps_ = model['params']
+    vals = [block_value(p['type'], p['default']) for p in ps_]
+    for i, v in enumerate(values or []):
+        if i < len(vals):
+            vals[i] = block_value(ps_[i]['type'], v)
+    n3 = len(vals)
+    if model['btype'] in TRAILS_TYPES:
+        if ps_ and ps_[-1]['type'] == 1 and ps_[-1]['name'] in ('DryThru', 'Trails'):
+            n3 -= 1
+        else:
+            vals.append(bool(values[len(ps_)]) if values and len(values) > len(ps_) else False)
+    return {19: 6, 20: {24: {23: False, 25: model['pid'], 26: -1}, 9: model['btype'], 10: bool(on),
+                        11: {2: len(vals), 3: n3, 4: vals}, 12: {2: 0, 3: 0, 4: []}}}
+
+
+def _entry_offset(blob, pos):
+    """Byte offset and length of block-list entry pos (preset map key 0 -> key 22 -> [pos])."""
+    loc = locate(blob)
+    o = loc[(0, 22, pos, 19)][0] - 2              # the entry map header (0x82) and key 19 come first
+    u = msgpack.Unpacker(raw=True, strict_map_key=False)
+    u.feed(blob[o:])
+    u.unpack()
+    return o, u.tell()
+
+
+def _replace_entry(blob, pos, new_bytes):
+    table, _ = parse_blob(blob)
+    o, n = _entry_offset(blob, pos)
+    delta = len(new_bytes) - n
+    out = blob[:o] + new_bytes + blob[o + n:]
+    table = [x + delta if x > o else x for x in table]       # section ends after the entry move with it
+    tbl = msgpack.packb(struct.pack(f'<{len(table)}I', *table), use_bin_type=False)
+    head = msgpack.packb(b'l6-helix\0', use_bin_type=False)
+    assert out[len(head):len(head) + len(tbl)][:3] == tbl[:3]
+    return head + tbl + out[len(head) + len(tbl):]
+
+
+def _set_snapshot_states(blob, pos, on):
+    """Every snapshot's on/off for block position pos (map key 10 -> 10 -> [snap] -> 3 -> [pos] -> 1)."""
+    _, body = parse_blob(blob)
+    for k, snap in enumerate(body.get(10, {}).get(10, []) or []):
+        st = snap.get(3) if isinstance(snap, dict) else None
+        if st and pos < len(st) and isinstance(st[pos], list) and len(st[pos]) > 1 and st[pos][1] is not None:
+            blob = set_in_place(blob, (10, 10, k, 3, pos, 1), bool(on))
+    return blob
+
+
+def add_block(blob, pos, model, values=None, on=True):
+    """blob with model placed in the empty block position pos (1..9 on path A)."""
+    o, n = _entry_offset(blob, pos)
+    if blob[o:o + n] != EMPTY_BLOCK:
+        raise SystemExit(f'block position {pos} is not empty')
+    blob = _replace_entry(blob, pos, msgpack.packb(make_block(model, values, on), use_bin_type=False, use_single_float=True))
+    return _set_snapshot_states(blob, pos, on)
+
+
+def remove_block(blob, pos):
+    """blob with block position pos emptied (snapshot states for it set on, as an empty position has them)."""
+    _, body = parse_blob(blob)
+    if body[0][22][pos][19] != 6:
+        raise SystemExit(f'block position {pos} holds no effect block')
+    return _set_snapshot_states(_replace_entry(blob, pos, EMPTY_BLOCK), pos, True)
+
+
+DEFAULT_IMAGE = os.path.join(os.path.dirname(HERE), 'build', 'HX_Effects_v3.80.0_NAM_Amps_Effects.hxf')
+
+
+def build_preset(base, spec, by_name):
+    """A preset blob from a base blob (its blocks and footswitches cleared) and a SPEC dict (see the usage)."""
+    _, body = parse_blob(base)
+    blob = base
+    for pos, blk in enumerate(body[0][22]):
+        if blk[19] == 6:
+            blob = remove_block(blob, pos)
+    for j in range(len(body[3][8])):
+        blob = replace_node(blob, (3, 8, j), None)
+    for b in spec['blocks']:
+        m = by_name.get(b['model'])
+        if not m:
+            raise SystemExit(f"unknown model {b['model']!r} (see: preset_send.py models)")
+        vals = b.get('values')
+        if isinstance(vals, dict):
+            names = [p['name'] for p in m['params']]
+            bad = [k for k in vals if k not in names]
+            if bad:
+                raise SystemExit(f"{b['model']}: no knob {bad} (knobs: {names})")
+            vals = [vals.get(p['name'], p['default']) for p in m['params']]
+        if not 1 <= int(b['pos']) <= 9:
+            raise SystemExit('block positions are 1..9 (path A)')
+        blob = add_block(blob, int(b['pos']), m, vals, b.get('on', True))
+        if b.get('footswitch'):
+            fs = int(b['footswitch'])
+            if not 1 <= fs <= len(body[3][8]):
+                raise SystemExit(f'footswitch {fs}: 1..{len(body[3][8])}')
+            blob = replace_node(blob, (3, 8, fs - 1), footswitch(int(b['pos']), b.get('label') or m['display'] or m['name']))
+    return blob
 
 
 def readable(x):
@@ -288,6 +497,32 @@ def main():
         elif a[:1] == ['bypass'] and len(a) == 3 and a[2] in ('on', 'off'):
             session(lambda api: api.bypass(int(a[1]), a[2] == 'on'))
             print(f'block {a[1]} {a[2]}')
+        elif a[:1] == ['models']:
+            img = a[a.index('--image') + 1] if '--image' in a else DEFAULT_IMAGE
+            by_name, _ = model_table(img)
+            for nm, m in sorted(by_name.items(), key=lambda kv: kv[1]['pid']):
+                print(f"{m['pid']:4d} {nm:36s} {m['display'][:24]:24s} " + ', '.join(p['name'] for p in m['params']))
+        elif a[:1] == ['build'] and len(a) >= 3:
+            n, spec = slot_index(a[1]), json.load(open(a[2]))
+            img = a[a.index('--image') + 1] if '--image' in a else DEFAULT_IMAGE
+            by_name, _ = model_table(img)
+
+            def go(api):
+                bases = [slot_index(a[a.index('--base') + 1])] if '--base' in a else [n, 0]
+                base = None
+                for bi in bases:
+                    st, r = api.request(4, {107: SETLIST, 108: bi, 101: 2})
+                    if isinstance(r, (bytes, bytearray)):
+                        base = bytes(r)
+                        break
+                if base is None:
+                    raise flash.FlashError('no base preset to build on (try --base 1A)')
+                blob = build_preset(base, spec, by_name)
+                api.preset_write(n, blob, spec.get('name', 'New Preset'))
+                return blob, api.preset_read(n)
+            blob, back = session(go)
+            print(f"{slot_name(n)}: built {len(blob)} bytes ({len(spec['blocks'])} blocks), wrote it as "
+                  f"{spec.get('name', 'New Preset')!r}; read back: " + ('IDENTICAL' if back == blob else 'DIFFERENT'))
         else:
             sys.exit(__doc__)
     except flash.FlashError as ex:
