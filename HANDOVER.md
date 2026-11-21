@@ -263,7 +263,8 @@ stock's end and ours (not in the partition table; presets and IRs live elsewhere
   stock file with a recipe (`tools/recipe.py make BUILD.hxf web/recipe-<mode>.bin` after every release build; the
   page checks the result's MD5), installs it over WebUSB (`web/flasher.js`, same bytes as `flash.py`) or via Updater,
   converts .nam captures (level-matched), and has a Rescue section that reflashes stock. Unit image now `06fee4c9`
-  (full), flashed with flash.py. Not yet run on a unit from the page itself; not yet hosted.
+  (full), flashed with flash.py. Hosted at https://scottlynn73.github.io/hx-effects-nam-lite/ (branch gh-pages = `git
+  subtree split --prefix web` of main). Install and Rescue from the page tested on the unit by the user (2026-11-21).
 - **Drum data** (`grooves_data.h`, `samples_data.h`) is committed now (user: none of it is private).
 
 ## Open / next
