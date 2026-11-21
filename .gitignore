@@ -15,3 +15,6 @@ tools/usb/usblog_hxedit.dylib
 
 # Claude Code agent worktrees
 .claude/
+
+# Preset builder: generated from the local HX Edit install (Line 6 data)
+tools/preset-builder/hx-data.js

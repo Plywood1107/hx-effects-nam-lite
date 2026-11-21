@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HX Effects Preset Builder</title>
+<style>
+  :root {
+    --bg: #15171a; --panel: #1e2125; --panel-2: #262a2f; --line: #33383e;
+    --text: #e8eaed; --muted: #9aa1a9; --accent: #4fa3ff; --warn: #ff6b5b; --ok: #46c37b;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 16px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 16px; }
+  header h1 { font-size: 18px; margin: 0 8px 0 0; letter-spacing: .2px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .field input, .field select {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; min-width: 0;
+  }
+  .field input:focus, .field select:focus, .search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .spacer { flex: 1; }
+  .btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 8px 14px; }
+  .btn:hover { border-color: #4a5058; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.small { padding: 5px 10px; font-size: 13px; }
+  .btn.danger:hover { border-color: var(--warn); color: var(--warn); }
+  .meta { color: var(--muted); font-size: 12px; }
+
+  .chain { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .row + .row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .row-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .row-head strong { font-size: 13px; }
+  .meter { flex: 0 1 220px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+  .meter > div { height: 100%; background: var(--ok); transition: width .2s; }
+  .meter.over > div { background: var(--warn); }
+  .meter-label { font-size: 12px; color: var(--muted); min-width: 130px; }
+  .meter-label.over { color: var(--warn); }
+  .slots { display: grid; grid-template-columns: repeat(9, minmax(88px, 1fr)); gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .slot {
+    position: relative; height: 74px; border-radius: 8px; border: 1px dashed var(--line); background: transparent;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; text-align: left;
+    padding: 8px 9px; overflow: hidden; min-width: 0;
+  }
+  .slot .pos { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--muted); }
+  .slot.filled { border: 1px solid transparent; background: var(--panel-2); }
+  .slot.filled::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c, #888); }
+  .slot .grp { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--c, var(--muted)); }
+  .slot .nm { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .slot.off .nm, .slot.off .grp { opacity: .45; }
+  .slot.off .nm { text-decoration: line-through; }
+  .slot.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .slot.empty .nm { color: var(--muted); font-weight: 400; }
+  .slot.dragover { background: #2c3440; }
+
+  .lower { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+  @media (min-width: 900px) { .lower { grid-template-columns: minmax(320px, 5fr) 7fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  .chip[aria-pressed="true"] { background: var(--c, var(--accent)); border-color: var(--c, var(--accent)); color: #0d0f12; font-weight: 600; }
+  .search { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; margin-bottom: 10px; }
+  .models { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .model { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+    background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; }
+  .model:hover { background: var(--panel-2); }
+  .model .mg { font-size: 11px; color: var(--c, var(--muted)); white-space: nowrap; }
+  .empty-note { color: var(--muted); padding: 8px; }
+
+  .ed-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
+  .ed-head .title { font-size: 17px; font-weight: 600; margin-right: auto; }
+  .ed-head .sub { font-size: 12px; color: var(--muted); width: 100%; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 18px; }
+  .param { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .param .top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+  .param .top span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .param input[type=range] { width: 100%; accent-color: var(--accent); }
+  .param select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .toggle { align-self: flex-start; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 4px 12px; font-size: 13px; }
+  .toggle[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  .hint { color: var(--muted); }
+  .hint p { margin: 0 0 8px; }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2c3138; border: 1px solid var(--line);
+    padding: 10px 16px; border-radius: 8px; max-width: calc(100% - 32px); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #toast.show { opacity: 1; }
+  .missing { max-width: 640px; margin: 60px auto; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .missing code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .unit-only { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #9aa); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .fw-note { font-size: 12px; color: var(--muted, #9aa); margin: 0 0 12px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="hx-data.js"></script>
+<script>
+"use strict";
+const HX = window.HX_DATA;
+const app = document.getElementById("app");
+
+if (!HX) {
+  app.innerHTML = `<div class="missing"><h2>Model data not found</h2>
+    <p>This page reads models from your own HX Edit install. Run this once in this folder, then reload:</p>
+    <p><code>python3 tools/preset-builder/extract_hx_data.py</code></p></div>`;
+  throw new Error("hx-data.js missing");
+}
+
+// ---------- constants ----------
+// HX Effects only: one DSP, nine blocks on path A of dsp0 (see docs/hxedit-preset-format.md)
+const SLOTS = 9;
+const DEVICES = {
+  hfx: { label: "HX Effects", id: 2162693, template: "hfx", rows: 1 },
+};
+const GROUPS = ["Distortion","Dynamics","EQ","Modulation","Delay","Reverb","Pitch/Synth","Filter","Wah",
+                "Amp","Preamp","Cab","IR","Volume/Pan","Send/Return","Looper"];
+const COLORS = {
+  "Distortion":"#f5901e","Dynamics":"#e3cf2a","EQ":"#b8bec6","Modulation":"#3d94f0","Delay":"#33c27a",
+  "Reverb":"#e7739a","Pitch/Synth":"#a07bff","Filter":"#cf74e0","Wah":"#c98a4b","Amp":"#ff5a4e",
+  "Preamp":"#ff8a7a","Cab":"#b39579","IR":"#8fb57a","Volume/Pan":"#86aec4","Send/Return":"#a5a8d6","Looper":"#d9b24c",
+};
+const byId = Object.fromEntries(HX.models.map(m => [m.id, m]));
+const STORE_KEY = "hx-effects-preset-builder-v2";
+// This repo's firmware builds (build.py), each adding to the one before
+const BUILDS = { stock: "Stock 3.80", nam: "NAM build", amps: "NAM + Amps build", full: "Full build" };
+const BUILD_ORDER = HX.builds || ["stock", "nam", "amps", "full"];
+const AMP_LIMIT = 3;   // amps + preamps per preset on the amp builds (docs/amps-findings.md)
+
+// ---------- state ----------
+function emptyRows(n) { return Array.from({ length: n }, () => Array(SLOTS).fill(null)); }
+let state = { name: "New Preset", device: "hfx", build: "full", rows: emptyRows(1), sel: { row: 0, slot: 0 } };
+let ui = { group: "Distortion", query: "" };
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+  if (saved && DEVICES[saved.device] && Array.isArray(saved.rows) && saved.rows.length === 1) {
+    state = saved;
+    if (!BUILDS[state.build]) state.build = "full";
+    state.rows = state.rows.map(r => Array.from({ length: SLOTS }, (_, i) => (r[i] && byId[r[i].model]) ? r[i] : null));
+  }
+  const savedUi = JSON.parse(localStorage.getItem(STORE_KEY + "-ui") || "null");
+  if (savedUi) ui = { ...ui, ...savedUi, query: "" };
+} catch (e) { /* storage unavailable: start fresh */ }
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORE_KEY + "-ui", JSON.stringify({ group: ui.group }));
+  } catch (e) { /* ignore */ }
+}
+
+// ---------- model helpers ----------
+const dev = () => DEVICES[state.device];
+const inBuild = b => BUILD_ORDER.indexOf(b) <= BUILD_ORDER.indexOf(state.build);
+const isCustom = m => !!(m && m.fw && m.fw.host);
+const monoTaken = m => !!(m.fw && m.fw.monoTakenBy && inBuild(m.fw.monoTakenBy.build));
+const canStereo = m => m.stereo === true;
+const canMono = m => m.mono !== false && !monoTaken(m);
+function available(m) {
+  if (m.fw && m.fw.build) return inBuild(m.fw.build);           // added by a firmware build
+  if (!canMono(m) && !canStereo(m)) return false;               // its only version was taken over
+  return !m.devices || m.devices.includes(dev().id);
+}
+const isAmp = m => m.category === 1 || m.category === 13;
+// A custom effect's knob reaches the unit through a .hlx only where its host has a parameter with the same slot id
+// and type (HX Edit only knows the host); the rest keep the unit's defaults and are set on the unit.
+function hostParamFor(m, p) {
+  if (!isCustom(m) || !p.slot) return null;
+  const hp = m.fw.hostParams.find(h => h.slot === p.slot && h.valueType === p.valueType);
+  if (!hp) return null;
+  const def = byId[m.fw.host].params.find(q => q.symbolicID === hp.name);
+  if (!def) return null;
+  if (p.valueType !== 2 && (p.min < def.min || p.max > def.max)) return null;   // HX Edit would clamp it
+  return def;
+}
+const hasParam = (m, sym) => m.params.some(p => p.symbolicID === sym);
+
+// Block @type rule taken from HX Edit's BlockTypeFromCategory()
+function blockType(m) {
+  if (isCustom(m)) return blockType(byId[m.fw.host]);
+  if (m.category === 1 || m.category === 13) return 1;   // amp (no linked cab) / preamp
+  if (m.category === 2 || m.category === 19) return 2;   // single cab
+  if (m.category === 15) return 6;                       // looper
+  if (m.category === 16) return 5;                       // impulse response
+  return hasParam(m, "@trails") ? 7 : 0;                 // delay/reverb-style blocks with trails
+}
+function blockLoad(b) {
+  const m = byId[b.model];
+  const v = b.stereo ? (m.loadStereo ?? m.load) : (m.load ?? m.loadStereo);
+  return v || 0;
+}
+function paramMax(p, stereo) { return stereo && p.max_stereo != null ? p.max_stereo : p.max; }
+function paramDefault(p, stereo) { return stereo && p.default_stereo != null ? p.default_stereo : p.default; }
+
+function newBlock(m) {
+  const stereo = !canMono(m) ? true : false;
+  const values = {};
+  for (const p of m.params) {
+    if (p.symbolicID === "@enabled" || p.symbolicID === "@stereo") continue;
+    values[p.symbolicID] = paramDefault(p, stereo);
+  }
+  return { model: m.id, enabled: true, stereo, values };
+}
+
+// ---------- value formatting (from HelixControls.json) ----------
+function control(p) {
+  let c = HX.controls[p.displayType], guard = 0;
+  while (c && c.alias && guard++ < 5) c = HX.controls[c.alias] || null;
+  return c || null;
+}
+function printf(fmt, n) {
+  return String(fmt)
+    .replace(/%(\+?)(?:\.(\d+))?([fd])/g, (_, plus, dec, kind) => {
+      const s = kind === "d" ? String(Math.round(n)) : n.toFixed(dec != null ? +dec : 6);
+      return (plus && n >= 0 ? "+" : "") + s;
+    })
+    .replace(/%%/g, "%");
+}
+function enumLabels(p) {
+  if (p.labels) return null;
+  const c = control(p);
+  if (c && c.isDiscrete && Array.isArray(c.format) && typeof c.format[0] === "string") return c.format;
+  return null;
+}
+function formatValue(p, v) {
+  if (p.labels) return p.labels[String(p.valueType === 2 ? +!!v : v)] ?? String(v);
+  if (p.valueType === 2) { const l = enumLabels(p); return l ? (l[v ? 1 : 0] ?? (v ? "On" : "Off")) : (v ? "On" : "Off"); }
+  const c = control(p);
+  const labels = enumLabels(p);
+  if (labels) return labels[v - p.min] ?? String(v);
+  if (!c) return p.valueType === 0 ? String(v) : (+v).toFixed(2);
+  if (c.dspToDisplayIntegerOffset != null) return String(v + c.dspToDisplayIntegerOffset);
+  let d = v * (c.dspToDisplayScale ?? 1);
+  if (c.minimumValue != null && c.maximumValue != null && p.max !== p.min) {
+    d = c.minimumValue + (v - p.min) / (p.max - p.min) * (c.maximumValue - c.minimumValue);
+  }
+  let fmt = c.formatUnits || c.format;
+  if (Array.isArray(fmt)) {
+    const e = fmt.find(f => d >= f.lowerBound && d < f.upperBound) || fmt[fmt.length - 1];
+    if (!e || typeof e !== "object") return p.valueType === 0 ? String(v) : d.toFixed(2);
+    d *= e.unitsMultiplier ?? 1;
+    fmt = e.formatUnits || e.format;
+  }
+  if (!fmt) return p.valueType === 0 ? String(Math.round(d)) : d.toFixed(2);
+  return printf(fmt, d);
+}
+
+// ---------- rendering ----------
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, "");
+    else if (v !== false && v != null) n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) n.append(c instanceof Node ? c : document.createTextNode(c));
+  return n;
+};
+
+function render() {
+  const focusId = document.activeElement && document.activeElement.id;
+  const caret = document.activeElement && document.activeElement.selectionStart;
+  app.replaceChildren(renderHeader(), renderChain(), el("div", { class: "lower" }, renderBrowser(), renderEditor()));
+  if (focusId) {
+    const f = document.getElementById(focusId);
+    if (f) { f.focus(); if (caret != null && f.setSelectionRange) try { f.setSelectionRange(caret, caret); } catch (e) {} }
+  }
+  save();
+}
+
+function renderHeader() {
+  const fileInput = el("input", { type: "file", accept: ".hlx,application/json", class: "visually-hidden", id: "importFile",
+    onchange: e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ""; } });
+  return el("header", {},
+    el("h1", {}, "HX Effects Preset Builder"),
+    el("div", { class: "field" },
+      el("label", { for: "presetName" }, "Preset name"),
+      el("input", { id: "presetName", maxlength: "16", value: state.name, size: "18",
+        oninput: e => { state.name = e.target.value; save(); } })),
+    el("div", { class: "field" },
+      el("label", { for: "buildSel" }, "Firmware"),
+      el("select", { id: "buildSel", onchange: e => setBuild(e.target.value) },
+        BUILD_ORDER.map(k => el("option", { value: k, selected: k === state.build }, BUILDS[k] || k)))),
+    el("div", { class: "spacer" }),
+    el("span", { class: "meta" }, `Models from HX Edit ${HX.hxEditVersion || "?"} + this repo's builds`),
+    fileInput,
+    el("button", { class: "btn", onclick: () => fileInput.click() }, "Import .hlx"),
+    el("button", { class: "btn danger", onclick: clearAll }, "Clear"),
+    el("button", { class: "btn primary", onclick: exportHlx }, "Export .hlx"),
+  );
+}
+
+function renderChain() {
+  const rows = state.rows.map((row, r) => {
+    const load = row.reduce((s, b) => s + (b ? blockLoad(b) : 0), 0);
+    const over = load > 100;
+    const used = row.filter(Boolean).length;
+    const amps = row.filter(b => b && isAmp(byId[b.model])).length;
+    const label = `Signal chain · ${used} of ${SLOTS} blocks` + (amps ? ` · ${amps} of ${AMP_LIMIT} amps/preamps` : "");
+    return el("div", { class: "row" },
+      el("div", { class: "row-head" },
+        el("strong", {}, label),
+        el("div", { class: "meter" + (over ? " over" : ""), title: "Estimated from HX Edit's per-model load figures" },
+          el("div", { style: `width:${Math.min(100, load)}%` })),
+        el("span", { class: "meter-label" + (over || amps > AMP_LIMIT ? " over" : "") },
+          `≈ ${load.toFixed(0)}% DSP${over ? " — too much" : ""}${amps > AMP_LIMIT ? ` — more than ${AMP_LIMIT} amps/preamps` : ""}`)),
+      el("div", { class: "slots" }, row.map((b, s) => renderSlot(b, r, s))));
+  });
+  return el("section", { class: "chain", "aria-label": "Signal chain" }, rows);
+}
+
+function renderSlot(b, r, s) {
+  const sel = state.sel.row === r && state.sel.slot === s;
+  const m = b && byId[b.model];
+  const common = {
+    id: `slot-${r}-${s}`,
+    class: "slot" + (m ? " filled" : " empty") + (sel ? " sel" : "") + (m && !b.enabled ? " off" : ""),
+    style: m ? `--c:${COLORS[m.group]}` : "",
+    "aria-label": m ? `Slot ${s + 1}: ${m.name}` : `Slot ${s + 1}: empty`,
+    "aria-pressed": sel ? "true" : "false",
+    draggable: m ? "true" : "false",
+    onclick: () => { state.sel = { row: r, slot: s }; render(); },
+    ondragstart: e => { e.dataTransfer.setData("text/plain", `${r},${s}`); e.dataTransfer.effectAllowed = "move"; },
+    ondragover: e => { e.preventDefault(); e.currentTarget.classList.add("dragover"); },
+    ondragleave: e => e.currentTarget.classList.remove("dragover"),
+    ondrop: e => {
+      e.preventDefault();
+      const [fr, fs] = e.dataTransfer.getData("text/plain").split(",").map(Number);
+      if (Number.isInteger(fr) && Number.isInteger(fs)) moveBlock(fr, fs, r, s);
+    },
+  };
+  return el("button", common,
+    el("span", { class: "pos" }, String(s + 1)),
+    m ? el("span", { class: "grp" }, m.group + (b.stereo ? " · Stereo" : "") + (m.fw && m.fw.build ? " · ★" : "")) : null,
+    el("span", { class: "nm" }, m ? m.name : "Empty"));
+}
+
+function renderBrowser() {
+  const q = ui.query.trim().toLowerCase();
+  const list = HX.models.filter(m => available(m) && (q ? (m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)) : m.group === ui.group));
+  list.sort((a, b) => q ? (GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || a.name.localeCompare(b.name)) : a.name.localeCompare(b.name));
+  const groups = GROUPS.filter(g => HX.models.some(m => m.group === g && available(m)));
+  return el("section", { class: "panel", "aria-label": "Model browser" },
+    el("h2", {}, "Models"),
+    el("input", { class: "search", id: "modelSearch", type: "search", placeholder: "Search all models…", value: ui.query,
+      oninput: e => { ui.query = e.target.value; render(); } }),
+    el("div", { class: "chips" }, groups.map(g => el("button", {
+      class: "chip", style: `--c:${COLORS[g]}`, "aria-pressed": (!q && ui.group === g) ? "true" : "false",
+      onclick: () => { ui.group = g; ui.query = ""; render(); } }, g))),
+    el("div", { class: "models" },
+      list.length ? list.map(m => el("button", { class: "model", style: `--c:${COLORS[m.group]}`,
+          title: `Put ${m.name} in slot ${state.sel.slot + 1}`, onclick: () => placeModel(m) },
+          el("span", {}, m.name + (m.fw && m.fw.build ? " ★" : "")), el("span", { class: "mg" }, q ? m.group : ((m.load ?? m.loadStereo ?? 0).toFixed(1) + "%"))))
+        : el("div", { class: "empty-note" }, "No models match.")));
+}
+
+function renderEditor() {
+  const { row, slot } = state.sel;
+  const b = state.rows[row] && state.rows[row][slot];
+  const panel = el("section", { class: "panel", "aria-label": "Block editor" }, el("h2", {}, `Slot ${slot + 1}`));
+  if (!b) {
+    panel.append(el("div", { class: "hint" },
+      el("p", {}, "Empty slot. Pick a model from the list to put it here."),
+      el("p", {}, "Drag blocks between slots to reorder. ", el("kbd", {}, "Delete"), " removes the selected block."),
+      el("p", {}, "When you're done, Export .hlx and import the file in HX Edit (Preset ▸ Import, or drag it onto a preset slot).")));
+    return panel;
+  }
+  const m = byId[b.model];
+  const head = el("div", { class: "ed-head" },
+    el("span", { class: "title", style: `color:${COLORS[m.group]}` }, m.name),
+    el("button", { class: "toggle", "aria-pressed": b.enabled ? "true" : "false",
+      onclick: () => { b.enabled = !b.enabled; render(); } }, b.enabled ? "On" : "Bypassed"));
+  if (canStereo(m) && canMono(m)) {
+    head.append(el("button", { class: "toggle", "aria-pressed": b.stereo ? "true" : "false",
+      onclick: () => setStereo(b, !b.stereo) }, b.stereo ? "Stereo" : "Mono"));
+  }
+  if (m.cablink && byId[m.cablink] && available(byId[m.cablink])) {
+    head.append(el("button", { class: "btn small", onclick: () => addMatchingCab(row, slot) }, `Add cab: ${byId[m.cablink].name}`));
+  }
+  head.append(
+    el("button", { class: "btn small", onclick: () => { state.rows[row][slot] = { ...newBlock(m), enabled: b.enabled, stereo: b.stereo }; render(); } }, "Reset"),
+    el("button", { class: "btn small danger", onclick: () => removeSelected() }, "Remove"),
+    el("span", { class: "sub" }, `${m.group} · ${isCustom(m) ? `stored as mono ${byId[m.fw.host].name} (${m.fw.host})` : m.id} · ≈ ${blockLoad(b).toFixed(1)}% DSP`));
+  panel.append(head);
+  if (isCustom(m) || (m.fw && m.fw.build)) {
+    panel.append(el("p", { class: "fw-note" }, isCustom(m)
+      ? "Added by this repo's firmware. HX Edit only knows the stock block it replaces, so knobs marked “unit only” can't travel in the .hlx: they start at the unit's defaults and are set on the unit. HX Edit can't edit this block after import."
+      : "An HX Stomp amp added by this repo's firmware. HX Edit can't edit it after import; set it up here or on the unit."));
+  }
+
+  const params = m.params.filter(p => !p.symbolicID.match(/^@(enabled|stereo)$/) && (b.stereo || !p["stereo-only"]));
+  panel.append(el("div", { class: "params" }, params.map(p => renderParam(b, p))));
+  return panel;
+}
+
+function renderParam(b, p) {
+  const id = `p-${b.model}-${p.symbolicID}`.replace(/[^\w-]/g, "_");
+  const v = b.values[p.symbolicID] ?? paramDefault(p, b.stereo);
+  const valueSpan = el("span", {}, formatValue(p, v));
+  const m = byId[b.model];
+  const unitOnly = isCustom(m) && !hostParamFor(m, p) ? el("span", { class: "unit-only", title: "Not carried by the .hlx: set it on the unit" }, "unit only") : null;
+  const pname = el("span", {}, p.name, unitOnly ? " " : null, unitOnly);
+  let ctrl;
+  if (p.labels && p.valueType !== 2) {
+    ctrl = el("select", { id, onchange: e => { b.values[p.symbolicID] = +e.target.value; render(); } },
+      Object.entries(p.labels).map(([k, l]) => el("option", { value: k, selected: +k === v }, l)));
+    return el("div", { class: "param" }, el("label", { class: "top", for: id }, pname), ctrl);
+  }
+  if (p.valueType === 2) {
+    ctrl = el("button", { class: "toggle", id, "aria-pressed": v ? "true" : "false",
+      onclick: () => { b.values[p.symbolicID] = !v; render(); } }, formatValue(p, v));
+    return el("div", { class: "param" }, el("div", { class: "top" }, pname), ctrl);
+  }
+  const labels = enumLabels(p);
+  const max = paramMax(p, b.stereo);
+  if (labels && p.valueType === 0 && labels.length >= max - p.min + 1) {
+    ctrl = el("select", { id, onchange: e => { b.values[p.symbolicID] = +e.target.value; render(); } },
+      Array.from({ length: max - p.min + 1 }, (_, i) => el("option", { value: p.min + i, selected: p.min + i === v }, labels[i])));
+    return el("div", { class: "param" }, el("label", { class: "top", for: id }, pname), ctrl);
+  }
+  const step = p.valueType === 0 ? 1 : (max - p.min) / 1000;
+  ctrl = el("input", { type: "range", id, min: p.min, max, step, value: v,
+    oninput: e => {
+      const nv = p.valueType === 0 ? Math.round(+e.target.value) : +e.target.value;
+      b.values[p.symbolicID] = nv; valueSpan.textContent = formatValue(p, nv); save();
+    },
+    ondblclick: () => { b.values[p.symbolicID] = paramDefault(p, b.stereo); render(); },
+    title: "Double-click to reset" });
+  return el("div", { class: "param" }, el("label", { class: "top", for: id }, pname, valueSpan), ctrl);
+}
+
+// ---------- actions ----------
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+}
+function placeModel(m) {
+  const { row, slot } = state.sel;
+  const amps = state.rows[row].filter((b, i) => b && i !== slot && isAmp(byId[b.model])).length;
+  if (isAmp(m) && amps >= AMP_LIMIT) { toast(`The unit takes at most ${AMP_LIMIT} amps and preamps per preset.`); return; }
+  state.rows[row][slot] = newBlock(m);
+  render();
+}
+function setBuild(key) {
+  state.build = key;
+  const before = state.rows.flat().filter(Boolean).length;
+  state.rows = state.rows.map(r => r.map(b => {
+    if (!b) return null;
+    const m = byId[b.model];
+    if (!available(m)) return null;
+    if (!b.stereo && !canMono(m)) return null;      // its mono version is a custom effect in this build
+    return b;
+  }));
+  const lost = before - state.rows.flat().filter(Boolean).length;
+  if (lost) toast(`${lost} block${lost > 1 ? "s" : ""} removed: not in the ${BUILDS[key]}.`);
+  render();
+}
+function removeSelected() {
+  const { row, slot } = state.sel;
+  if (state.rows[row][slot]) { state.rows[row][slot] = null; render(); }
+}
+function moveBlock(fr, fs, tr, ts) {
+  if (fr === tr && fs === ts) return;
+  const a = state.rows[fr][fs];
+  state.rows[fr][fs] = state.rows[tr][ts];
+  state.rows[tr][ts] = a;
+  state.sel = { row: tr, slot: ts };
+  render();
+}
+function setStereo(b, stereo) {
+  const m = byId[b.model];
+  b.stereo = stereo;
+  for (const p of m.params) {   // switch params whose default/range differ in stereo
+    if (p.default_stereo != null && b.values[p.symbolicID] === paramDefault(p, !stereo)) b.values[p.symbolicID] = paramDefault(p, stereo);
+    const max = paramMax(p, stereo);
+    if (typeof b.values[p.symbolicID] === "number" && b.values[p.symbolicID] > max) b.values[p.symbolicID] = max;
+  }
+  render();
+}
+function addMatchingCab(row, slot) {
+  const cab = byId[byId[state.rows[row][slot].model].cablink];
+  const free = state.rows[row].findIndex((b, i) => i > slot && !b);
+  if (free < 0) { toast("No empty slot after this amp for the cab."); return; }
+  state.rows[row][free] = newBlock(cab);
+  state.sel = { row, slot: free };
+  render();
+}
+function clearAll() {
+  if (!state.rows.flat().some(Boolean) || confirm("Clear all blocks?")) {
+    state.rows = emptyRows(dev().rows); state.sel = { row: 0, slot: 0 }; render();
+  }
+}
+
+// ---------- .hlx export / import ----------
+function buildHlx() {
+  const d = dev();
+  const t = structuredClone(HX.templates[d.template]);
+  t.data.meta.name = (state.name || "New Preset").slice(0, 16);
+  t.data.meta.modifieddate = Math.floor(Date.now() / 1000);
+  t.data.device = d.id;
+  state.rows.forEach((row, r) => {
+    const dsp = t.data.tone["dsp" + r];
+    let n = 0;
+    row.forEach((b, pos) => {
+      if (!b) return;
+      const m = byId[b.model];
+      if (isCustom(m)) { dsp["block" + n++] = customBlock(b, m, pos); return; }
+      const o = { "@model": m.id, "@position": pos, "@path": 0, "@type": blockType(m), "@enabled": !!b.enabled, "@no_snapshot_bypass": false };
+      for (const p of m.params) {
+        const k = p.symbolicID;
+        if (k === "@enabled") continue;
+        if (k === "@stereo") { o[k] = !!b.stereo; continue; }
+        let v = b.values[k] ?? paramDefault(p, b.stereo);
+        if (p.valueType === 0) v = Math.round(v);
+        o[k] = v;
+      }
+      dsp["block" + n++] = o;
+    });
+  });
+  return t;
+}
+// A custom effect is written as the mono stock block it replaces: the host's parameters, each taking the value of the
+// effect's knob with the same slot id and type where there is one, else the host's default.
+function customBlock(b, m, pos) {
+  const host = byId[m.fw.host];
+  const o = { "@model": host.id, "@position": pos, "@path": 0, "@type": blockType(m), "@enabled": !!b.enabled, "@no_snapshot_bypass": false };
+  for (const hp of host.params) {
+    const k = hp.symbolicID;
+    if (k === "@enabled" || hp["stereo-only"]) continue;
+    if (k === "@stereo") { o[k] = false; continue; }
+    const knob = m.params.find(p => hostParamFor(m, p) === hp);
+    let v = knob ? (b.values[knob.symbolicID] ?? knob.default) : paramDefault(hp, false);
+    if (hp.valueType === 0) v = Math.round(v);
+    if (hp.valueType === 2) v = !!v;
+    o[k] = v;
+  }
+  return o;
+}
+function exportHlx() {
+  if (!state.rows.flat().some(Boolean)) { toast("Add at least one block first."); return; }
+  const json = JSON.stringify(buildHlx(), null, 2);
+  const a = el("a", { href: URL.createObjectURL(new Blob([json], { type: "application/json" })),
+    download: (state.name.trim() || "preset").replace(/[^\w\- ]+/g, "_") + ".hlx" });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast("Exported. Import it in HX Edit to load it onto your device.");
+}
+async function importFile(file) {
+  let j;
+  try { j = JSON.parse(await file.text()); } catch (e) { toast("That file isn't valid JSON."); return; }
+  if (!j || !j.data || !j.data.tone) { toast("That doesn't look like a Helix .hlx preset."); return; }
+  const otherDevice = j.data.device !== DEVICES.hfx.id;
+  state.device = "hfx";
+  state.name = (j.data.meta && j.data.meta.name) || file.name.replace(/\.hlx$/i, "");
+  state.rows = emptyRows(1);
+  let skipped = 0, unknown = 0;
+  state.rows.forEach((row, r) => {
+    const dsp = j.data.tone["dsp" + r] || {};
+    const blocks = Object.entries(dsp).filter(([k]) => /^block\d+$/.test(k)).map(([, b]) => b)
+      .sort((a, b) => (a["@position"] ?? 0) - (b["@position"] ?? 0));
+    for (const blk of blocks) {
+      let m = byId[blk["@model"]];
+      const pos = blk["@position"];
+      // a mono host block is the custom effect that replaces it in the chosen build
+      const takenBy = m && !blk["@stereo"] && monoTaken(m) ? byId[m.fw.monoTakenBy.id] : null;
+      if (takenBy) m = takenBy;
+      if (!m || !available(m)) { unknown++; continue; }
+      if ((blk["@path"] || 0) !== 0 || !(pos >= 0 && pos < SLOTS) || row[pos]) { skipped++; continue; }
+      const b = newBlock(m);
+      b.enabled = blk["@enabled"] !== false;
+      b.stereo = canStereo(m) ? (!!blk["@stereo"] || !canMono(m)) : false;
+      if (takenBy) {
+        for (const p of m.params) { const hp = hostParamFor(m, p); if (hp && hp.symbolicID in blk) b.values[p.symbolicID] = blk[hp.symbolicID]; }
+      } else {
+        for (const p of m.params) if (p.symbolicID in blk && p.symbolicID !== "@enabled" && p.symbolicID !== "@stereo") b.values[p.symbolicID] = blk[p.symbolicID];
+      }
+      row[pos] = b;
+    }
+  });
+  state.sel = { row: 0, slot: 0 };
+  render();
+  const notes = [];
+  if (otherDevice) notes.push("preset is from another device");
+  if (skipped) notes.push(`${skipped} block${skipped > 1 ? "s" : ""} on path B or without room skipped`);
+  if (unknown) notes.push(`${unknown} block${unknown > 1 ? "s" : ""} not in the ${BUILDS[state.build]} skipped`);
+  toast(notes.length ? `Imported with notes: ${notes.join("; ")}.` : "Imported.");
+}
+
+// ---------- keyboard ----------
+document.addEventListener("keydown", e => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea") return;
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSelected(); }
+  const { row, slot } = state.sel;
+  if (e.key === "ArrowRight" && slot < SLOTS - 1) { state.sel = { row, slot: slot + 1 }; render(); }
+  if (e.key === "ArrowLeft" && slot > 0) { state.sel = { row, slot: slot - 1 }; render(); }
+});
+
+render();
+</script>
+</body>
+</html>
