@@ -99,12 +99,23 @@
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .unit-only { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #9aa); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
   .fw-note { font-size: 12px; color: var(--muted, #9aa); margin: 0 0 12px; max-width: 70ch; }
+  #fsSel { font: inherit; font-size: 13px; background: var(--panel2, #2a2d34); color: inherit; border: 1px solid #555; border-radius: 6px; padding: 3px 6px; }
+  dialog.unit { max-width: 520px; width: calc(100% - 32px); border-radius: 12px; border: 1px solid #444; padding: 18px; background: #1d1f24; color: inherit; }
+  dialog.unit::backdrop { background: rgba(0,0,0,.55); }
+  dialog.unit h2 { margin: 0 0 8px; font-size: 18px; }
+  dialog.unit p { margin: 6px 0; font-size: 14px; }
+  dialog.unit select { width: 100%; font: inherit; padding: 6px; margin: 8px 0; }
+  dialog.unit .row-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+  dialog.unit .log { font: 12px/1.4 ui-monospace, Menlo, monospace; color: #9aa; white-space: pre-wrap; max-height: 140px; overflow: auto; }
 </style>
 </head>
 <body>
 <div class="wrap" id="app"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="hx-data.js"></script>
+<script src="fw-models.js"></script>
+<script src="preset-core.js"></script>
+<script src="../../web/flasher.js"></script>
 <script>
 "use strict";
 const HX = window.HX_DATA;
@@ -295,9 +306,11 @@ function renderHeader() {
     el("div", { class: "spacer" }),
     el("span", { class: "meta" }, `Models from HX Edit ${HX.hxEditVersion || "?"} + this repo's builds`),
     fileInput,
+    el("button", { class: "btn", onclick: () => unitDialog("read") }, "Read from unit"),
+    el("button", { class: "btn primary", onclick: () => unitDialog("send") }, "Send to unit"),
     el("button", { class: "btn", onclick: () => fileInput.click() }, "Import .hlx"),
     el("button", { class: "btn danger", onclick: clearAll }, "Clear"),
-    el("button", { class: "btn primary", onclick: exportHlx }, "Export .hlx"),
+    el("button", { class: "btn", onclick: exportHlx }, "Export .hlx"),
   );
 }
 
@@ -373,7 +386,7 @@ function renderEditor() {
     panel.append(el("div", { class: "hint" },
       el("p", {}, "Empty slot. Pick a model from the list to put it here."),
       el("p", {}, "Drag blocks between slots to reorder. ", el("kbd", {}, "Delete"), " removes the selected block."),
-      el("p", {}, "When you're done, Export .hlx and import the file in HX Edit (Preset ▸ Import, or drag it onto a preset slot).")));
+      el("p", {}, "When you're done, Send to unit writes it straight to a preset slot over USB (Chrome or Edge, HX Edit closed): every knob reaches the unit. Export .hlx is the HX Edit route.")));
     return panel;
   }
   const m = byId[b.model];
@@ -388,14 +401,17 @@ function renderEditor() {
   if (m.cablink && byId[m.cablink] && available(byId[m.cablink])) {
     head.append(el("button", { class: "btn small", onclick: () => addMatchingCab(row, slot) }, `Add cab: ${byId[m.cablink].name}`));
   }
+  head.append(el("label", { class: "sub", for: "fsSel" }, "Footswitch"),
+    el("select", { id: "fsSel", onchange: e => { b.fs = +e.target.value || null; render(); } },
+      [0, 1, 2, 3, 4, 5, 6].map(n => el("option", { value: n, selected: (b.fs || 0) === n }, n ? `FS${n}` : "None"))));
   head.append(
-    el("button", { class: "btn small", onclick: () => { state.rows[row][slot] = { ...newBlock(m), enabled: b.enabled, stereo: b.stereo }; render(); } }, "Reset"),
+    el("button", { class: "btn small", onclick: () => { state.rows[row][slot] = { ...newBlock(m), enabled: b.enabled, stereo: b.stereo, fs: b.fs }; render(); } }, "Reset"),
     el("button", { class: "btn small danger", onclick: () => removeSelected() }, "Remove"),
     el("span", { class: "sub" }, `${m.group} · ${isCustom(m) ? `stored as mono ${byId[m.fw.host].name} (${m.fw.host})` : m.id} · ≈ ${blockLoad(b).toFixed(1)}% DSP`));
   panel.append(head);
   if (isCustom(m) || (m.fw && m.fw.build)) {
     panel.append(el("p", { class: "fw-note" }, isCustom(m)
-      ? "Added by this repo's firmware. HX Edit only knows the stock block it replaces, so knobs marked “unit only” can't travel in the .hlx: they start at the unit's defaults and are set on the unit. HX Edit can't edit this block after import."
+      ? "Added by this repo's firmware. Send to unit sets every knob. Through a .hlx and HX Edit, knobs marked “unit only” can't travel (HX Edit only knows the stock block this replaces), and HX Edit can't edit the block afterwards."
       : "An HX Stomp amp added by this repo's firmware. HX Edit can't edit it after import; set it up here or on the unit."));
   }
 
@@ -409,7 +425,7 @@ function renderParam(b, p) {
   const v = b.values[p.symbolicID] ?? paramDefault(p, b.stereo);
   const valueSpan = el("span", {}, formatValue(p, v));
   const m = byId[b.model];
-  const unitOnly = isCustom(m) && !hostParamFor(m, p) ? el("span", { class: "unit-only", title: "Not carried by the .hlx: set it on the unit" }, "unit only") : null;
+  const unitOnly = isCustom(m) && !hostParamFor(m, p) ? el("span", { class: "unit-only", title: "Send to unit sets it; a .hlx through HX Edit doesn't carry it" }, ".hlx: unit only") : null;
   const pname = el("span", {}, p.name, unitOnly ? " " : null, unitOnly);
   let ctrl;
   if (p.labels && p.valueType !== 2) {
@@ -596,6 +612,162 @@ async function importFile(file) {
   if (skipped) notes.push(`${skipped} block${skipped > 1 ? "s" : ""} on path B or without room skipped`);
   if (unknown) notes.push(`${unknown} block${unknown > 1 ? "s" : ""} not in the ${BUILDS[state.build]} skipped`);
   toast(notes.length ? `Imported with notes: ${notes.join("; ")}.` : "Imported.");
+}
+
+// ---------- sending to / reading from the unit (preset-core.js, web/flasher.js) ----------
+// The page's blocks become a preset the unit stores directly: every knob, custom effects' own knobs included (no .hlx,
+// no HX Edit). fw-models.js holds each build's firmware model table (extract_fw_tables.py).
+const FW = window.FW_MODELS;
+const fwTable = () => FW && FW.builds[state.build];
+function fwName(m, stereo) {
+  const t = fwTable();
+  if (!t) return null;
+  if (isCustom(m)) return t[m.fw.hostSymbol] ? m.fw.hostSymbol : null;
+  const ms = stereo ? "Stereo" : "Mono";
+  // the firmware puts Mono/Stereo before a version suffix: HD2_DelayVintageDigitalV2 -> HD2_DelayVintageDigitalMonoV2
+  for (const c of [m.id + ms, m.id.replace(/(V\d+)$/, ms + "$1"), m.id]) if (t[c]) return c;
+  return null;
+}
+// HX Edit's knob names vs the firmware's: Gate_Range / Gate Range, Index_1 / Index.1, WowFluttr / WowFlutter
+const normKnob = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
+const subseq = (a, b) => { let i = 0; for (const c of b) if (c === a[i]) i++; return i === a.length; };   // a in b, in order
+function pageKnob(m, fwKnob, i) {
+  if (isCustom(m)) return m.params.find(q => q.slot === i + 1);
+  if (fwKnob === "DryThru" || fwKnob === "Trails") return m.params.find(q => q.symbolicID === "@trails");
+  const n = normKnob(fwKnob), ps = m.params.filter(q => !q.symbolicID.startsWith("@"));
+  return ps.find(q => q.symbolicID === fwKnob) || ps.find(q => normKnob(q.symbolicID) === n)
+    || ps.find(q => normKnob(q.symbolicID).length >= 5 && subseq(normKnob(q.symbolicID), n));
+}
+// a block's knob values in the firmware's order (a custom effect's knob "slotN" is position N-1), Trails last
+function fwValues(m, b, fwm) {
+  const params = fwm[2];
+  const vals = params.map((pp, i) => {
+    const p = pageKnob(m, pp[0], i);
+    const v = p ? (b.values[p.symbolicID] ?? paramDefault(p, b.stereo)) : null;
+    return v ?? pp[2];
+  });
+  const last = params[params.length - 1];
+  const ownTrails = last && last[1] === 1 && (last[0] === "DryThru" || last[0] === "Trails");
+  if ([8, 9, 13].includes(fwm[1]) && !ownTrails && "@trails" in b.values) vals.push(!!b.values["@trails"]);
+  return vals;
+}
+function buildSpec() {
+  const blocks = [], problems = [];
+  state.rows[0].forEach((b, s) => {
+    if (!b) return;
+    const m = byId[b.model], name = fwName(m, b.stereo);
+    if (!name) { problems.push(`${m.name} (slot ${s + 1}) isn't on the unit's 3.80 firmware (HX Edit knows newer models)`); return; }
+    const fwm = fwTable()[name];
+    const blk = { pos: s + 1, model: name, values: fwValues(m, b, fwm), on: !!b.enabled };
+    if (b.fs) { blk.footswitch = b.fs; blk.label = m.name.slice(0, 16); }
+    blocks.push(blk);
+  });
+  return { spec: { name: state.name || "New Preset", blocks }, problems };
+}
+function loadFromBlob(blob) {
+  const body = PRESET.parse(blob).body, t = fwTable(), byPid = {};
+  for (const [n, e] of Object.entries(t)) byPid[e[0]] ??= n;
+  const row = Array(SLOTS).fill(null);
+  let skipped = 0, unknown = 0;
+  body[0][22].forEach((blk, pos) => {
+    if (blk[19] !== 6) return;
+    if (pos < 1 || pos > SLOTS) { skipped++; return; }
+    const d = blk[20], name = byPid[d[24][25]];
+    if (!name) { unknown++; return; }
+    let m = HX.models.find(x => isCustom(x) && x.fw.hostSymbol === name && available(x));
+    const stereo = !m && /Stereo$/.test(name);
+    m ||= byId[name.replace(/(Mono|Stereo)$/, "")] || byId[name.replace(/(Mono|Stereo)(V\d+)$/, "$2")] || byId[name];
+    if (!m || !available(m)) { unknown++; return; }
+    const b = newBlock(m);
+    b.stereo = canStereo(m) ? (stereo || !canMono(m)) : false;
+    b.enabled = !!d[10];
+    const vals = d[11][4], params = t[name][2];
+    params.forEach((pp, i) => {
+      const p = pageKnob(m, pp[0], i);
+      if (p && i < vals.length) b.values[p.symbolicID] = typeof vals[i] === "boolean" ? vals[i] : (p.valueType === 0 ? Math.round(vals[i]) : vals[i]);
+    });
+    if (vals.length > params.length && "@trails" in b.values) b.values["@trails"] = !!vals[params.length];
+    (body[3][8] || []).forEach((sw, j) => (sw || []).forEach(e => { if (e[11][0] === 1 && e[11][8] === pos) b.fs = j + 1; }));
+    row[pos - 1] = b;
+  });
+  state.rows = [row];
+  state.sel = { row: 0, slot: 0 };
+  return { skipped, unknown };
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const slotLabel = n => `${Math.floor(n / 4) + 1}${"ABCD"[n % 4]}`;
+async function unitDialog(mode) {
+  if (!navigator.usb) { toast("Sending needs Chrome or Edge (WebUSB)."); return; }
+  if (!FW || !FW.builds[state.build]) { toast(`No firmware table for the ${BUILDS[state.build]}: run extract_fw_tables.py.`); return; }
+  let spec = null;
+  if (mode === "send") {
+    const r = buildSpec();
+    if (!r.spec.blocks.length) { toast("Add at least one block first."); return; }
+    if (r.problems.length) { toast(r.problems[0]); return; }
+    const load = state.rows[0].reduce((a, b) => a + (b ? blockLoad(b) : 0), 0);
+    const amps = state.rows[0].filter(b => b && isAmp(byId[b.model])).length;
+    if (load > 100 || amps > AMP_LIMIT) { toast("Too much for the unit's DSP: take a block out first."); return; }
+    spec = r.spec;
+  }
+  const dlg = el("dialog", { class: "unit" });
+  const log = el("div", { class: "log" });
+  const say = t => { log.textContent += t + "\n"; log.scrollTop = log.scrollHeight; };
+  const sel = el("select", { id: "unitSlot", disabled: true }, el("option", {}, "Connecting…"));
+  const go = el("button", { class: "btn primary", disabled: true }, mode === "send" ? "Send" : "Read");
+  const loadAfter = el("input", { type: "checkbox", id: "loadAfter", checked: true });
+  dlg.append(el("h2", {}, mode === "send" ? "Send to the HX Effects" : "Read a preset from the HX Effects"),
+    el("p", {}, "Quit HX Edit and Line 6 Updater first: they hold the USB connection. Chrome asks which device to use the first time."),
+    sel,
+    mode === "send" ? el("p", {}, loadAfter, el("label", { for: "loadAfter" }, " Load it on the unit afterwards")) : null,
+    log,
+    el("div", { class: "row-btns" }, el("button", { class: "btn", onclick: () => dlg.close() }, "Close"), go));
+  document.body.append(dlg);
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.showModal();
+  const session = fn => FLASHER.irSession({ usb: navigator.usb, log: () => {} }, fn);
+  let list;
+  try {
+    list = await session(api => api.presetList());
+  } catch (e) { say("Could not reach the unit: " + e.message); return; }
+  sel.replaceChildren(...list.map(p => el("option", { value: p.index }, `${slotLabel(p.index)}  ${p.name}`)));
+  sel.disabled = false; go.disabled = false;
+  if (mode === "send") { const free = list.find(p => p.name === "New Preset"); if (free) sel.value = free.index; }
+  go.onclick = async () => {
+    const n = +sel.value, target = list.find(p => p.index === n);
+    go.disabled = true; sel.disabled = true;
+    try {
+      if (mode === "read") {
+        const blob = await session(api => api.presetRead(n));
+        if (!blob) { say(`${slotLabel(n)} is empty.`); go.disabled = false; sel.disabled = false; return; }
+        const r = loadFromBlob(blob);
+        state.name = target.name;
+        render();
+        say(`Read ${slotLabel(n)} ${target.name}.`);
+        if (r.skipped) say(`${r.skipped} block(s) on the lower path not shown (the page has one path).`);
+        if (r.unknown) say(`${r.unknown} block(s) not in the ${BUILDS[state.build]}: change Firmware and read again.`);
+        return;
+      }
+      if (target.name !== "New Preset" && !confirm(`Replace ${slotLabel(n)} "${target.name}" on the unit?`)) { go.disabled = false; sel.disabled = false; return; }
+      await session(async api => {
+        let base = await api.presetRead(n);
+        if (!base) base = await api.presetRead(0);             // an empty slot: build on 1A's settings
+        let irs = {};
+        if (spec.blocks.some(b => fwTable()[b.model][1] === 19)) for (const e of await api.list()) if (e.md5) irs[e.slot] = e.md5;
+        const blob = PRESET.build(base, spec, fwTable(), irs);
+        say(`Built ${blob.length} bytes; writing ${slotLabel(n)}…`);
+        await api.presetWrite(n, blob, spec.name, sleep);
+        const back = await api.presetRead(n);
+        const same = back && back.length === blob.length && back.every((x, i) => x === blob[i]);
+        say(same ? "Written and read back: identical." : "Written, but it reads back differently: check it before playing.");
+        if (same && loadAfter.checked) { await api.presetLoad(n); say(`Loaded ${slotLabel(n)} on the unit.`); }
+      });
+      toast(`Sent to ${slotLabel(n)}.`);
+    } catch (e) {
+      say("Stopped: " + e.message);
+    }
+    go.disabled = false; sel.disabled = false;
+  };
 }
 
 // ---------- keyboard ----------

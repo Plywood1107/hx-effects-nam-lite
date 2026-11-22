@@ -524,10 +524,12 @@
     var r = await this.ch.recv(9, 10);
     if (r[0] || r[1]) throw fail("protocol", "unexpected service answer " + hex(r));
   };
-  Api.prototype.request = async function (op, args, acceptWorking) {
+  // typ 2: requests; typ 6: "live" requests (load, current preset). One id counter for both: the unit may answer a
+  // type-6 request as type 2, so answers are matched by id (tools/preset_send.py).
+  Api.prototype.request = async function (op, args, acceptWorking, typ) {
     var rid = this.id++, body = mpEncode(M([102, rid], [100, op], [101, args]));
     var head = new Uint8Array(8), v = new DataView(head.buffer);
-    v.setUint16(0, 1, true); v.setUint16(2, 2, true); v.setUint32(4, body.length, true);
+    v.setUint16(0, 1, true); v.setUint16(2, typ || 2, true); v.setUint32(4, body.length, true);
     await this.ch.send(concat([head, body]));
     var end = Date.now() + 30000;
     while (Date.now() < end) {
@@ -597,6 +599,40 @@
     if (info.status !== 0 || data.status !== 0) throw fail("refused", "the unit refused to read slot " + src);
     var samples = data.result instanceof Uint8Array ? data.result : new Uint8Array(0);
     return this.put(dst, samples, txt(info.result[109]), md5of(samples), sleep);
+  };
+
+  // ---- presets (tools/preset_send.py; docs/hxedit-preset-format.md "On the wire") ----
+  Api.prototype.presetList = async function () {
+    var r = await this.request(1, M([107, 0], [101, 2]));
+    if (r.status !== 0) throw fail("refused", "the unit refused the preset list (" + r.status + ")");
+    return (r.result || []).map(function (e) {
+      var k = Object.keys(e)[0];
+      return { index: +k, name: txt(e[k][109]) };
+    });
+  };
+  // the preset's blob, or null for an empty slot
+  Api.prototype.presetRead = async function (n) {
+    var r = await this.request(4, M([107, 0], [108, n], [101, 2]));
+    if (r.status !== 0) throw fail("refused", "the unit refused to read preset " + n);
+    return r.result instanceof Uint8Array ? r.result : null;
+  };
+  // write a blob into a slot (HX Edit brackets it with 255/254); the caller checks it by reading it back
+  Api.prototype.presetWrite = async function (n, blob, name, sleep) {
+    await this.request(255, M());
+    var r;
+    try { r = await this.request(8, M([107, 0], [108, n], [109, utf8z(name)], [123, false], [124, false], [125, 0], [110, blob]), true); }
+    finally { await this.request(254, M()); }
+    if (r.status !== 0 && r.status !== 1) throw fail("refused", "the unit refused to write preset " + n + " (" + r.status + ")");
+    await sleep(500);
+  };
+  Api.prototype.presetLoad = async function (n) {
+    var r = await this.request(20, M([107, 0], [108, n]), true, 6);
+    if (r.status !== 0 && r.status !== 1) throw fail("refused", "the unit refused to load preset " + n);
+  };
+  Api.prototype.current = async function () {
+    var r = await this.request(23, null, false, 6);
+    if (r.status !== 0) throw fail("refused", "the unit refused the current preset");
+    return { index: r.result[108], name: txt(r.result[109]) };
   };
 
   // irSession(o, fn): the running unit (the one the page may use, or the one picked), its API opened, fn(api) run.

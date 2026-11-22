@@ -111,7 +111,13 @@ switches and snapshots; no EXP pedal or MIDI controller to try those). See the f
 
 **Step 4 so far:** `preset-core.js` (the builder in JavaScript) builds the same bytes as preset_send.py
 (`check_core.py`: hundreds of random presets on real bases); `extract_fw_tables.py` writes fw-models.js (git-ignored)
-with each build's model table. Next: the page's Read from unit / Send to slot.
+with each build's model table.
+
+**The page sends and reads (2026-11-22, tested by the user in Chrome):** Send to unit / Read from unit, a footswitch per
+block; web/flasher.js has the preset requests (list, read, write, load, current). 654 model choices map to the
+firmware (knob names matched loosely: HX Edit and the firmware spell some differently; custom effects by position);
+every model round-trips page -> preset -> page in the browser. Next: page controls for the lower path, snapshots and
+knob controllers (the builder already has them), and capturing preset delete.
 
 Original plan for this step:
 

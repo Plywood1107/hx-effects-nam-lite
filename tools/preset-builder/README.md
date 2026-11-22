@@ -16,11 +16,23 @@ Models added by a build are marked ★. The model data comes from your own HX Ed
 (Line 6 data); the firmware models are read from the build scripts (`firmware_models.py`), so the list follows them:
 
 ```bash
-python3 tools/preset-builder/extract_hx_data.py            # writes hx-data.js (gitignored)
-python3 -m http.server 8766 --bind 127.0.0.1 -d tools/preset-builder
+.venv/bin/python tools/preset-builder/extract_hx_data.py      # hx-data.js: HX Edit's model list (gitignored)
+.venv/bin/python tools/preset-builder/extract_fw_tables.py    # fw-models.js: each build's firmware model table (gitignored)
+python3 -m http.server 8767 --bind 127.0.0.1                    # from the repo root: the page loads ../../web/flasher.js
 ```
 
-Then open <http://127.0.0.1:8766/>. Re-run the extractor after updating HX Edit or changing the builds.
+Then open <http://127.0.0.1:8767/tools/preset-builder/> in Chrome or Edge. Re-run the extractors after updating HX
+Edit or changing the builds (fw-models.js needs the built images in build/ and Line 6's file in firmware/).
+
+## Sending to the unit
+
+**Send to unit** writes the preset straight into a slot over USB (WebUSB: Chrome or Edge, HX Edit and Line 6 Updater
+closed), the way `tools/preset_send.py build` does, with `preset-core.js` (the same bytes: `check_core.py`). Every knob
+reaches the unit, custom effects' own knobs included; it reads the slot back to check it, and can load it. The
+preset's snapshot names and settings come from the slot it replaces (an empty slot uses 1A's). **Read from unit**
+loads a preset from the unit into the page (main path; lower-path blocks are not shown yet). Each block can have a
+bypass footswitch (several blocks may share one). Models HX Edit 3.82 knows but the unit's 3.80 firmware doesn't
+(Transient Shaper, Shuffling/Euclidean Delay, ...) can't be sent.
 
 ## How the custom effects travel
 
@@ -35,7 +47,7 @@ effect on a new host (`dump_host_params.py <stock .hxf>`, needs numpy).
 Amps and preamps keep their own HX Stomp identities, which HX Edit knows. HX Edit can't edit NAM, the amps or the
 effects once they are on the unit (README: "code −8200").
 
-Not tested yet: HX Edit importing a preset with any of these blocks and sending it to the unit. Back up presets first.
+The rest of this section is about the .hlx route; Send to unit doesn't need it.
 
 Limits: one chain of nine blocks on path A of `dsp0` (path B blocks are skipped on import), no snapshots or
 controller assignments, no cabs. Importing a preset from another device keeps the blocks the chosen build has and
