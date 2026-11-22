@@ -113,14 +113,16 @@ class Api(iu.Api):
         return bytes(res)
 
     def wait_done(self, rid, seconds):
-        """Wait for the unit's "done" notification for request rid; False if none came in time (it only reaches
-        a client subscribed for notifications, which these tools may not be)."""
+        """Wait for the unit's "done" notification for request rid. Notifications come on their own connection
+        (self.notes: host port 0x1002, unit port 0x03f0, service 4), as HX Edit opens it; False if none came in time."""
+        ch = getattr(self, 'notes', None) or self.ch
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            if len(self.ch.rx) < 8:
-                self.ch._pump(20)
+            if len(ch.rx) < 8:
+                ch._pump(20)
                 continue
-            mtyp, v = self._msg(30.0)
+            a, mtyp, n = struct.unpack('<HHI', ch.recv(8, 30.0))
+            v = msgpack.unpackb(ch.recv(n, 30.0), raw=True, strict_map_key=False)
             if mtyp == 4 and isinstance(v, dict) and isinstance(v.get(106), dict) and v[106].get(102) == rid:
                 return True
         return False
@@ -136,7 +138,7 @@ class Api(iu.Api):
             # 1 = "working": the unit stores the file after answering. HX Edit sends the closing 254 only after the
             # done notification (capture 2026-11-21); closing at once left slots with a scrambled start (2026-11-22).
             if st == 1:
-                self.wait_done(rid, 5.0)
+                self.last_done = self.wait_done(rid, 5.0)
         finally:
             self.request(254, {})
         if st not in (0, 1):
@@ -674,13 +676,24 @@ def session(fn):
         raise flash.FlashError('no HX Effects running its main app on USB' if mode is None else f'the unit is in {mode} mode')
     flash.claim(d)
     try:
+        # Two connections, as HX Edit opens them: requests (service 2) and notifications (service 4). Without the
+        # notification connection the unit took only about 16 preset writes per power-on (2026-11-22).
         ch = flash.Channel(d)
+        notes = flash.Channel(d, 0x1002, 0x03f0)
+        flash.Channel.link(ch, notes)
         ch.open()
         try:
+            notes.open()
+            notes.send(bytes.fromhex('010004000100000004'))
+            r = notes.recv(9)
+            if r[:2] != b'\0\0':
+                raise flash.FlashError(f'unexpected notification service answer {r.hex()}')
             api = Api(ch)
+            api.notes = notes
             api.open()
             return fn(api)
         finally:
+            notes.close()
             ch.close()
     finally:
         flash.release(d)

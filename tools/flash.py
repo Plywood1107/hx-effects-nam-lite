@@ -115,10 +115,16 @@ class Firmware:
 # --------------------------------------------------------------------------- the message channel
 
 class Channel:
-    """Line 6's reliable byte stream over bulk endpoints 0x01/0x81 (one port pair)."""
+    """Line 6's reliable byte stream over bulk endpoints 0x01/0x81 (one port pair).
 
-    def __init__(self, dev):
+    Several channels can share the endpoints (HX Edit opens three: 0x1001-0x03ef service 2 for requests, 0x1002-0x03f0
+    service 4 for notifications, 0x1080-0x03ed service 6). Link them with link(); each read then hands every message to
+    the channel whose device port sent it, and pumping one channel keeps the others acknowledged and heartbeating."""
+
+    def __init__(self, dev, host_port=HOST_PORT, dev_port=DEV_PORT):
         self.dev = dev
+        self.host_port, self.dev_port = host_port, dev_port
+        self.siblings, self.inbox = [], []
         self.seq = 0
         self.rx = bytearray()
         self.tx_bytes = 0                              # payload bytes sent
@@ -133,7 +139,7 @@ class Channel:
     def _write(self, kind, flags, payload=b''):
         n = 8 + len(payload)
         ack = (self.host_base + self.rx_bytes) & 0xffffffff
-        m = struct.pack('<HBBHH', n, 0, kind, HOST_PORT, DEV_PORT) + bytes([0, self.seq & 0xff]) + \
+        m = struct.pack('<HBBHH', n, 0, kind, self.host_port, self.dev_port) + bytes([0, self.seq & 0xff]) + \
             struct.pack('>H', flags) + struct.pack('<I', ack) + payload
         m += b'\0' * (-len(m) % 4)
         self.dev.write(EP_OUT, m, timeout=5000)
@@ -152,12 +158,23 @@ class Channel:
             ln, _, kind, src, dst = struct.unpack_from('<HBBHH', buf, o)
             flags = struct.unpack_from('>H', buf, o + 10)[0]
             ack = struct.unpack_from('<I', buf, o + 12)[0]
-            out.append((kind, flags, ack, buf[o + 16:o + 8 + ln]))
+            msg = (kind, flags, ack, buf[o + 16:o + 8 + ln])
+            other = [c for c in self.siblings if c.dev_port == src]
+            if other:
+                other[0].inbox.append(msg)                # another channel's message: keep it for that channel
+            else:
+                out.append(msg)
             o += (8 + ln + 3) & ~3
-        return out
+        mine, self.inbox = self.inbox + out, []
+        return mine
 
-    def _pump(self, timeout_ms=20):
-        for kind, flags, ack, payload in self._read_once(timeout_ms):
+    @staticmethod
+    def link(*chans):
+        for c in chans:
+            c.siblings = [o for o in chans if o is not c]
+
+    def _handle(self, msgs):
+        for kind, flags, ack, payload in msgs:
             if kind == 0x28:
                 self.dev_base = struct.unpack('<I', payload[:4])[0]
                 self.connected = True
@@ -173,15 +190,21 @@ class Channel:
                 self._write(0x18, 0x08)               # acknowledge it
             elif flags & 0x10 and not self.closed:
                 pass                                   # the unit's answer to our heartbeat
-        if not self.closed and time.monotonic() - self.last_tx > HEARTBEAT:
+        if not self.closed and (self.connected or not self.siblings) and time.monotonic() - self.last_tx > HEARTBEAT:
             self._write(0x18, 0x10)
+
+    def _pump(self, timeout_ms=20):
+        self._handle(self._read_once(timeout_ms))
+        for c in self.siblings:                        # their messages read here; acknowledge them, keep them alive
+            msgs, c.inbox = c.inbox, []
+            c._handle(msgs)
 
     # stream
     def open(self):
         while self._read_once(100):                    # purge anything stale
             pass
         self.connected = False
-        m = struct.pack('<HBBHH', 0x0c, 0, 0x28, HOST_PORT, DEV_PORT) + bytes.fromhex('000000020001002100100000')
+        m = struct.pack('<HBBHH', 0x0c, 0, 0x28, self.host_port, self.dev_port) + bytes.fromhex('000000020001002100100000')
         self.dev.write(EP_OUT, m, timeout=5000)
         self.seq, self.last_tx = 2, time.monotonic()
         t = time.monotonic()
