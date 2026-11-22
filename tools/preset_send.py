@@ -26,7 +26,12 @@ SPEC: {"name": "My Preset", "split": 1, "merge": 10, "blocks": [{"pos": 1, "mode
   footswitches are cleared first.
   "snapshots": {"current": 1, "names": ["Clean", "Drive", ...], "states": {"2": [true, true, false, true]},
                 "knobs": [{"pos": 1, "knob": "Drive", "values": [0.1, 0.2, 0.3, 0.4]}, ...]}
-  sets the snapshots: states turns a block on or off per snapshot; knobs gives a knob a value per snapshot. --image is the firmware on the unit (default build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf).
+  sets the snapshots: states turns a block on or off per snapshot; knobs gives a knob a value per snapshot.
+  "controls": [{"pos": 2, "knob": "Gain", "source": "exp1", "min": 0.2, "max": 0.8},
+               {"pos": 2, "knob": "Level", "source": "fs2", "min": 0.3, "max": 0.7, "label": "Level"},
+               {"pos": 2, "knob": "Tone", "source": "midi", "cc": 21}]
+  puts knobs on EXP pedals 1/2, footswitches 1..6 (switching between min and max) or MIDI CCs. A block can also have
+  "footswitch": 1 (one per block; several blocks may share a switch), "midi_bypass": CC and "snapshot_bypass": false. --image is the firmware on the unit (default build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf).
 SLOT is an index (0..127) or bank/slot like 22D. Close HX Edit first.
 
 Every request here was seen in a capture of HX Edit (docs/hxedit-preset-format.md, "On the wire"); nothing else is
@@ -279,8 +284,16 @@ def replace_node(blob, path, value):
 
 def footswitch(pos, label, colour=525824):
     """One footswitch entry turning the block at pos on and off, as the unit writes it (preset 1B)."""
-    return [{10: 7, 11: {0: 1, 5: label.encode('utf-8') + b'\0', 6: colour, 7: False, 8: pos}, 12: False, 14: b'\0',
+    # 11 -> 7 True: the switch toggles its block on its own; False made the preset's switches act as an either/or group
+    # (FS Test A/B, 2026-11-22). HX Edit writes True for bypass switches.
+    return [{10: 7, 11: {0: 1, 5: label.encode('utf-8') + b'\0', 6: colour, 7: True, 8: pos}, 12: False, 14: b'\0',
              13: False, 16: 0, 15: False}]
+
+
+def fs_knob(pos, ki, label, colour=462860):
+    """A footswitch entry that switches a knob between its controller's min and max (preset 25C)."""
+    return {10: 0, 11: {0: 2, 5: label.encode('utf-8') + b'\0', 6: colour, 7: False, 8: pos, 2: 0,
+                        9: {28: 0, 29: ki, 41: False}}, 12: False, 14: b'\0', 13: False, 16: 0, 15: False}
 
 
 TRAILS_TYPES = (8, 9, 13)        # block types whose value list ends with a Trails switch (n2 = n3 + 1)
@@ -321,10 +334,24 @@ def model_table(image):
         ni = m['words'][2]
         if ni in pid and ni in btype:
             e = {'name': m['name'], 'display': m['displayName'], 'pid': pid[ni], 'btype': btype[ni],
-                 'params': [{k: p[k] for k in ('name', 'type', 'default', 'min', 'max')} for p in m['params']]}
+                 'params': [knob(p) for p in m['params']]}
             by_name[m['name']] = e
             by_pid.setdefault(pid[ni], e)
     return by_name, by_pid
+
+
+def knob(p):
+    """A model parameter as {name, type, default, min, max}. Entry 3 keeps a switch's or whole number's default,
+    min and max as integers in the same words as a decimal's floats (parse_entry3_full reads them all as floats, so
+    6 came out as 8.4e-45): read those back as the integers they are."""
+    out = {'name': p['name'], 'type': p['type']}
+    for k in ('default', 'min', 'max'):
+        v = p[k]
+        if p['type'] in (1, 2):
+            v = struct.unpack('<i', struct.pack('<f', v))[0]
+            v = bool(v) if p['type'] == 1 else v
+        out[k] = v
+    return out
 
 
 def block_value(t, v):
@@ -431,60 +458,134 @@ def remove_block(blob, pos):
 DEFAULT_IMAGE = os.path.join(os.path.dirname(HERE), 'build', 'HX_Effects_v3.80.0_NAM_Amps_Effects.hxf')
 
 
-SNAP_CTRL = 10                   # section 4's list for the snapshot controller (1, 2: the expression pedals)
+# Controller sources: section 4's list index, and the id inside each entry (presets 24A, 25C made in HX Edit)
+SOURCES = {'exp1': 1, 'exp2': 2, **{f'fs{n}': n + 2 for n in range(1, 7)}, 'midi': 9, 'snapshots': 10}
 EMPTY_SLOT = [False, 64, None]   # an unused snapshot value slot
 
 
-def apply_snapshots(blob, spec, by_name):
-    """Snapshot settings from spec['snapshots'] (see the usage): every controller assignment of the base is cleared
-    (they pointed at its blocks), then each snapshot knob gets a controller entry and a value slot in every
-    snapshot; the blocks hold the current snapshot's values. Worked out from preset 24A (HX Edit, 2026-11-21)."""
+def _knob_range(p):
+    """A knob's full range as HX Edit writes it in a controller entry (decimals as floats, whole numbers as ints)."""
+    return (float(p['min']), float(p['max'])) if p['type'] == 3 else (int(p['min']), int(p['max'])) if p['type'] == 2 \
+        else (False, True)
+
+
+def apply_controls(blob, spec, by_name):
+    """Snapshots, controller assignments, footswitches, MIDI bypass and snapshot bypass from spec (see the usage).
+    Everything of the base is cleared first (it pointed at its blocks). Layout (presets 24A and 25C):
+      section 4 [source] = [entry, ...], newest first; source 1/2 EXP pedals, 3..8 footswitches 1..6, 9 MIDI CC,
+        10 snapshots. A knob entry: {0: id, 1: {0: source, 1: CC (4 when not MIDI), 2: min, 3: max, 4: 0,
+        5: block position, 6: {28: 0, 29: knob number, 41: False}, 7: 0, 13: False}}. A MIDI bypass entry:
+        {0: id, 1: {0: 9, 1: CC, 2: None, 3: None, 4: 2, 5: position, 9: 5, 10: 300, 11: True, 12: 0}}.
+      ids are unique in the preset. Every knob entry (any source) has a value slot in every snapshot:
+        snapshot 2 [slot] = [False, id, value]; key 10 -> 8 counts them.
+      section 3 -> 8 [footswitch] = [entry, ...]: bypass entries (footswitch()) and knob entries (fs_knob()).
+      key 10 -> 13 [position] = snapshot bypass (True: snapshots switch the block)."""
     _, body = parse_blob(blob)
     snaps = body[10][10]
     n = len(snaps)
+    nslots = len(snaps[0][2])
     blob = replace_node(blob, (4,), [None] * len(body[4]))
     for k in range(n):
         blob = replace_node(blob, (10, 10, k, 2), [list(EMPTY_SLOT) for _ in snaps[k][2]])
-    blob = set_in_place(blob, (10, 8), 0)
-    sp = spec.get('snapshots')
-    if not sp:
-        return blob
+    if isinstance(body[10].get(13), list):
+        for pos in range(len(body[10][13])):
+            blob = set_in_place(blob, (10, 13, pos), True)
+    blocks = {int(b['pos']): b for b in spec['blocks']}
+    sp = spec.get('snapshots') or {}
     cur = int(sp.get('current', 1)) - 1
     if not 0 <= cur < n:
         raise SystemExit(f'snapshots.current: 1..{n}')
-    blocks = {int(b['pos']): b for b in spec['blocks']}
     for k, name in enumerate(sp.get('names', [])[:n]):
         blob = replace_node(blob, (10, 10, k, 4), name.encode('utf-8') + b'\0')
     for pos, states in (sp.get('states') or {}).items():
         pos = int(pos)
+        if pos in blocks and blocks[pos].get('snapshot_bypass') is False:
+            # snapshots don't switch this block, so it has one state in all of them (HX Edit's 25C); different states
+            # per snapshot with snapshot bypass off froze the unit at load (28A, 2026-11-22)
+            raise SystemExit(f'snapshots.states[{pos}]: the block has snapshot_bypass false, so snapshots do not switch it')
         if pos not in blocks or len(states) != n:
             raise SystemExit(f'snapshots.states[{pos}]: a block position from blocks, with {n} on/off values')
         for k in range(n):
             blob = set_in_place(blob, (10, 10, k, 3, pos, 1), bool(states[k]))
         blob = set_in_place(blob, (0, 22, pos, 20, 10), bool(states[cur]))
-    entries = []
-    for slot, kn in enumerate(sp.get('knobs', [])):
-        pos = int(kn['pos'])
+
+    def knob_of(pos, knob, where):
         if pos not in blocks:
-            raise SystemExit(f'snapshots.knobs: no block at {pos}')
+            raise SystemExit(f'{where}: no block at {pos}')
         m = by_name[blocks[pos]['model']]
         names = [p['name'] for p in m['params']]
-        ki = names.index(kn['knob']) if isinstance(kn['knob'], str) else int(kn['knob'])
-        p, vals = m['params'][ki], kn['values']
-        if len(vals) != n:
+        if isinstance(knob, str) and knob not in names:
+            raise SystemExit(f"{where}: {blocks[pos]['model']} has no knob {knob!r} (knobs: {names})")
+        ki = names.index(knob) if isinstance(knob, str) else int(knob)
+        return ki, m['params'][ki]
+
+    lists = {}                                   # source -> [entries], in assignment order
+    fs = {}                                      # footswitch -> [entries], in assignment order
+    next_id = [0]
+
+    def new_id():
+        next_id[0] += 1
+        return next_id[0] - 1
+    for b in spec['blocks']:                     # bypass assignments
+        pos = int(b['pos'])
+        if b.get('midi_bypass') is not None:
+            lists.setdefault(SOURCES['midi'], []).append(
+                {0: new_id(), 1: {0: SOURCES['midi'], 1: int(b['midi_bypass']), 2: None, 3: None, 4: 2, 5: pos, 9: 5,
+                                  10: 300, 11: True, 12: 0}})
+        if b.get('snapshot_bypass') is False and isinstance(body[10].get(13), list):
+            blob = set_in_place(blob, (10, 13, pos), False)
+        sws = [b['footswitch']] if isinstance(b.get('footswitch'), int) else b.get('footswitch') or []
+        if len(sws) > 1:     # HX Edit gives a block one bypass switch; two (FS1 and FS3) froze the unit (25D, 2026-11-22)
+            raise SystemExit(f"block {pos}: one footswitch per block (several blocks may share a footswitch)")
+        for f_ in sws:
+            if not 1 <= int(f_) <= len(body[3][8]):
+                raise SystemExit(f'footswitch {f_}: 1..{len(body[3][8])}')
+            m = by_name[b['model']]
+            fs.setdefault(int(f_), []).append(footswitch(pos, b.get('label') or m['display'] or m['name'])[0])
+    knobs = []                                   # (source, pos, ki, p, min, max, cc, per-snapshot values, label)
+    for kn in sp.get('knobs', []):
+        ki, p = knob_of(int(kn['pos']), kn['knob'], 'snapshots.knobs')
+        if len(kn['values']) != n:
             raise SystemExit(f"snapshots.knobs {kn['knob']}: {n} values, one per snapshot")
-        if slot >= len(snaps[0][2]):
-            raise SystemExit(f'at most {len(snaps[0][2])} snapshot knobs')
-        vals = [block_value(p['type'], v) for v in vals]
+        rng = _knob_range(p)
+        knobs.append(('snapshots', int(kn['pos']), ki, p, rng[0], rng[1], 4, [block_value(p['type'], v) for v in kn['values']], None))
+    for c in spec.get('controls', []):
+        src = c.get('source')
+        if src not in SOURCES or src == 'snapshots':
+            raise SystemExit(f"controls: source {src!r} is one of exp1, exp2, fs1..fs6, midi (snapshots go in 'snapshots')")
+        ki, p = knob_of(int(c['pos']), c['knob'], 'controls')
+        rng = _knob_range(p)
+        lo = block_value(p['type'], c['min']) if 'min' in c else rng[0]
+        hi = block_value(p['type'], c['max']) if 'max' in c else rng[1]
+        if src == 'midi' and c.get('cc') is None:
+            raise SystemExit('controls: a midi control needs "cc"')
+        knobs.append((src, int(c['pos']), ki, p, lo, hi, int(c['cc']) if src == 'midi' else 4, None, c.get('label')))
+    if len(knobs) > nslots:
+        raise SystemExit(f'at most {nslots} controlled knobs in a preset')
+    for slot, (src, pos, ki, p, lo, hi, cc, vals, label) in enumerate(knobs):
+        cid = new_id()
+        if vals is None:                         # the knob's value in the block, in every snapshot
+            _, cur_body = parse_blob(blob)
+            v = cur_body[0][22][pos][20][11][4][ki]
+            vals = [v] * n
+        else:
+            blob = set_in_place(blob, (0, 22, pos, 20, 11, 4, ki), vals[cur])
         for k in range(n):
-            blob = replace_node(blob, (10, 10, k, 2, slot), [False, slot, vals[k]])
-        blob = set_in_place(blob, (0, 22, pos, 20, 11, 4, ki), vals[cur])
-        entries.append({0: ki, 1: {0: SNAP_CTRL, 1: 4, 2: float(p['min']), 3: float(p['max']), 4: 0, 5: pos,
-                                   6: {28: 0, 29: slot, 41: False}, 7: 0, 13: False}})
-    if entries:
-        entries.reverse()                          # HX Edit lists the last assigned first (24A)
-        blob = replace_node(blob, (4, SNAP_CTRL), entries)
-        blob = set_in_place(blob, (10, 8), len(entries))
+            blob = replace_node(blob, (10, 10, k, 2, slot), [False, cid, vals[k]])
+        lists.setdefault(SOURCES[src], []).append(
+            {0: cid, 1: {0: SOURCES[src], 1: cc, 2: lo, 3: hi, 4: 0, 5: pos, 6: {28: 0, 29: ki, 41: False}, 7: 0, 13: False}})
+        if src.startswith('fs'):
+            fs.setdefault(int(src[2:]), []).append(fs_knob(pos, ki, label or p['name']))
+    for source, entries in lists.items():
+        blob = replace_node(blob, (4, source), list(reversed(entries)))     # newest first, as HX Edit lists them
+    for f_, entries in fs.items():
+        # several blocks on one switch: HX Edit numbers the switch's entries in field 10, the first assigned 7, the next
+        # 6 (25C, made in HX Edit). With every entry 7 (and field 7 False) the unit froze at load (25D, 27D).
+        for k, e in enumerate(entries):
+            if e[11][0] == 1:
+                e[10] = 7 - k
+        blob = replace_node(blob, (3, 8, f_ - 1), list(reversed(entries)))
+    blob = set_in_place(blob, (10, 8), len(knobs))
     return set_in_place(blob, (10, 6), cur)
 
 
@@ -516,12 +617,7 @@ def build_preset(base, spec, by_name, ir_md5s=None):
             if not md5:
                 raise SystemExit(f"{b['model']} at {b['pos']}: User IR slot {slot} is empty on the unit")
         blob = add_block(blob, int(b['pos']), m, vals, b.get('on', True), md5)
-        if b.get('footswitch'):
-            fs = int(b['footswitch'])
-            if not 1 <= fs <= len(body[3][8]):
-                raise SystemExit(f'footswitch {fs}: 1..{len(body[3][8])}')
-            blob = replace_node(blob, (3, 8, fs - 1), footswitch(int(b['pos']), b.get('label') or m['display'] or m['name']))
-    blob = apply_snapshots(blob, spec, by_name)
+    blob = apply_controls(blob, spec, by_name)
     # where the split and merge sit: always set, never taken from the base. 1 and 10 is the usual layout (66 of 91
     # presets on the unit); a base with 0 and 0 (HX Edit wrote one) left the unit's block diagram empty (2026-11-22).
     for key, path, default in (('split', (0, 22, 11, 20, 15, 13), 1), ('merge', (0, 22, 21, 20, 17, 13), 10)):

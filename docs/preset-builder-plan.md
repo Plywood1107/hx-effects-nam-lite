@@ -102,7 +102,16 @@ what an image offers. Details: `docs/hxedit-preset-format.md`, "Building presets
 **Amps, IR blocks, the lower path and snapshots work too (2026-11-22):** `build` specs take amps (any of the 223),
 IR blocks (the slot's MD5 is looked up on the unit), positions 12..20 on the lower path, "split"/"merge", and
 "snapshots" (names, current, per-block on/off, per-snapshot knob values). 24B "Builder Test" on the unit (user: looks
-ok). Lesson: always write the split/merge places (see the format notes). Next: step 4, the page.
+ok). Lesson: always write the split/merge places (see the format notes).
+
+**Controllers (2026-11-22):** footswitches (several blocks per switch), footswitch → knob, EXP pedals 1/2 → knob,
+MIDI CC → knob, MIDI bypass, snapshot bypass. Two encodings froze the unit (shared switch with equal field 10 and
+field 7 False; snapshot bypass off with per-snapshot states); both are fixed and 29A "Controls Test 2" works (user:
+switches and snapshots; no EXP pedal or MIDI controller to try those). See the format notes.
+
+**Step 4 so far:** `preset-core.js` (the builder in JavaScript) builds the same bytes as preset_send.py
+(`check_core.py`: hundreds of random presets on real bases); `extract_fw_tables.py` writes fw-models.js (git-ignored)
+with each build's model table. Next: the page's Read from unit / Send to slot.
 
 Original plan for this step:
 

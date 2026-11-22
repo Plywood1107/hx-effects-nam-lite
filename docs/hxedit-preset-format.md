@@ -155,3 +155,26 @@ From test presets 23C, 23D and 24A made in HX Edit (read with op 4), checked byt
   (the blocks hold its values) and 10 → 8 the number of snapshot knobs. Top-level key 6 is the selected position.
 - Not covered: expression pedal and footswitch controller assignments (section 4 lists 1, 2 …), Command Center
   (section 2), snapshot-specific tempo, per-snapshot footswitch labels.
+
+### Controllers, footswitches, MIDI and snapshot bypass (2026-11-22, from 25C made in HX Edit; tested on the unit)
+
+- **Section 4 is one list per controller source**: 1 EXP pedal 1, 2 EXP pedal 2, 3..8 footswitches 1..6, 9 MIDI CC,
+  10 snapshots; entries newest first. A knob entry is `{0: id, 1: {0: source, 1: CC number (4 when not MIDI), 2: min,
+  3: max, 4: 0, 5: block position, 6: {28: 0, 29: KNOB NUMBER, 41: False}, 7: 0, 13: False}}`. **Field 0 is an id**
+  unique in the preset (not the knob: 24A only looked that way because they were equal); 6 → 29 is the knob.
+  Min/max: floats for decimal knobs, ints for whole-number knobs, False/True for switches.
+- **Every controlled knob, of any source, has a slot in every snapshot**: `[False, id, value]`; key 10 → 8 counts them.
+- **MIDI bypass**: in list 9, `{0: id, 1: {0: 9, 1: CC, 2: None, 3: None, 4: 2, 5: position, 9: 5, 10: 300, 11: True,
+  12: 0}}`. (An EXP bypass in the factory presets looks the same in list 1, with `1: 0`.)
+- **Snapshot bypass**: key 10 → 13 [position], True = snapshots switch the block. **With it off, the block's on/off
+  must be the same in every snapshot** (25C); different states per snapshot froze the unit at load (28A).
+- **Footswitches** (section 3 → 8 [switch]) hold a list: bypass entries `{10: n, 11: {0: 1, 5: label, 6: colour,
+  7: True, 8: position}, 12, 14, 13, 16, 15}` and knob entries `{10: 0, 11: {0: 2, 5: label, 6: colour, 7: False,
+  8: position, 2: 0, 9: {28: 0, 29: knob, 41: False}}, ...}`. **11 → 7 must be True** on a bypass entry (False made
+  the switches an either/or group), and **several blocks on one switch are numbered in field 10: 7 for the first
+  assigned, 6 for the next** (25C). Two entries both numbered 7 (with 7 False) froze the unit at load (25D, 27D).
+  One bypass switch per block (as HX Edit allows).
+- Freeze recovery used here: the unit restarts on the last preset, so a script waited for it on USB and overwrote
+  that slot in the moments before it froze again; one more power cycle then loaded the fixed preset.
+- `tools/preset_send.py` reads the unit's live state with type-6 op 22 (the loaded preset's blob, with the current
+  on/off of every block): a footswitch press shows up there within a second.

@@ -18,3 +18,4 @@ tools/usb/usblog_hxedit.dylib
 
 # Preset builder: generated from the local HX Edit install (Line 6 data)
 tools/preset-builder/hx-data.js
+tools/preset-builder/fw-models.js
