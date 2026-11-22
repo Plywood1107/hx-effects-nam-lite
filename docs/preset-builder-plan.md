@@ -97,7 +97,12 @@ keeping its type. **Building presets works (2026-11-21):** `preset_send.py build
 footswitches, adds blocks by firmware model name with knob values by position or name, assigns footswitches, writes
 and reads back. Tested on the unit: 23A/23B "API Test" with NAM A2 Lite (Model 5, Input 0.6 …) and Bam Crusher
 (all eight knobs, most of them "unit only" before), on FS1/FS2: knobs and footswitches right (user). `models` lists
-what an image offers. Details: `docs/hxedit-preset-format.md`, "Building presets". Next: step 4, the page.
+what an image offers. Details: `docs/hxedit-preset-format.md`, "Building presets".
+
+**Amps, IR blocks, the lower path and snapshots work too (2026-11-22):** `build` specs take amps (any of the 223),
+IR blocks (the slot's MD5 is looked up on the unit), positions 12..20 on the lower path, "split"/"merge", and
+"snapshots" (names, current, per-block on/off, per-snapshot knob values). 24B "Builder Test" on the unit (user: looks
+ok). Lesson: always write the split/merge places (see the format notes). Next: step 4, the page.
 
 Original plan for this step:
 

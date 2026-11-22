@@ -17,12 +17,16 @@ usage:
   .venv/bin/python tools/preset_send.py models [--image FILE.hxf]
                                                                 the models the image lists: name, preset id, knobs
 
-SPEC: {"name": "My Preset", "blocks": [{"pos": 1, "model": "HD2_DistRegalBassDIMono", "on": true,
+SPEC: {"name": "My Preset", "split": 1, "merge": 10, "blocks": [{"pos": 1, "model": "HD2_DistRegalBassDIMono", "on": true,
        "values": [5, 0.6, ...] or {"Drive": 0.6, ...}, "footswitch": 1, "label": "NAM"}, ...]}
   model is a firmware model name (models lists them; a custom effect is listed under the stock block it took over,
   with its own knobs); values are by position or by knob name, the rest stay at the model's defaults; footswitch is
-  1..6. The base preset (default: SLOT itself, else 1A) gives the snapshot, tempo and global settings; its blocks and
-  footswitches are cleared first. --image is the firmware on the unit (default build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf).
+  1..6. pos is 1..9 on the main path, 12..20 on the lower path (between the split and the merge, whose places
+  "split"/"merge" set, 0..10). An IR block's first knob is its User IR slot, which must hold an IR. The base preset (default: SLOT itself, else 1A) gives the snapshot, tempo and global settings; its blocks and
+  footswitches are cleared first.
+  "snapshots": {"current": 1, "names": ["Clean", "Drive", ...], "states": {"2": [true, true, false, true]},
+                "knobs": [{"pos": 1, "knob": "Drive", "values": [0.1, 0.2, 0.3, 0.4]}, ...]}
+  sets the snapshots: states turns a block on or off per snapshot; knobs gives a knob a value per snapshot. --image is the firmware on the unit (default build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf).
 SLOT is an index (0..127) or bank/slot like 22D. Close HX Edit first.
 
 Every request here was seen in a capture of HX Edit (docs/hxedit-preset-format.md, "On the wire"); nothing else is
@@ -297,9 +301,16 @@ def model_table(image):
     fo = lambda va, n=4: pa._e0_vaddr_to_foff(segs, va, n)
     u32 = lambda va: struct.unpack_from('<I', e0, fo(va))[0]
     pid = {}
-    for i in range(A.TAB1_CNT):
-        n, p, _, _ = struct.unpack_from('<IHHI', e0, fo(A.TAB1_BASE + 12 * i, 12))
-        pid[n] = p
+    t1 = u32(A.TAB1_BASE_PTRS[0])                    # the live table: the amps build moves and grows it
+    t1_cnt = max(pa._decode_thumb_movw(bytes(e0[fo(va, 4):][:4]))[1] for va in A.TAB1_CNT_INSNS)   # 688 with amps
+    for i in range(t1_cnt):
+        try:
+            n, p, _, _ = struct.unpack_from('<IHHI', e0, fo(t1 + 12 * i, 12))
+        except Exception:
+            break
+        if p > 0x1000 or n > 0x10000:
+            break
+        pid.setdefault(n, p)
     btype = {}
     for sl in range(52):
         lp, lc = u32(A.BLIST_PTR_TAB + 4 * sl), u32(A.BLIST_CNT_TAB + 4 * sl)
@@ -322,7 +333,10 @@ def block_value(t, v):
     return bool(v) if t == 1 else int(round(v)) if t == 2 else float(v)
 
 
-def make_block(model, values=None, on=True):
+IR_TYPE = 19                     # IR blocks: no field 12, and field 27 = the MD5 (hex) of the IR in their slot
+
+
+def make_block(model, values=None, on=True, ir_md5=None):
     """A block map for a model_table() entry: knob values by position (defaults where values is None or shorter),
     with a Trails switch (off) for delays/reverbs that have no DryThru-style last knob of their own."""
     ps_ = model['params']
@@ -336,8 +350,14 @@ def make_block(model, values=None, on=True):
             n3 -= 1
         else:
             vals.append(bool(values[len(ps_)]) if values and len(values) > len(ps_) else False)
-    return {19: 6, 20: {24: {23: False, 25: model['pid'], 26: -1}, 9: model['btype'], 10: bool(on),
-                        11: {2: len(vals), 3: n3, 4: vals}, 12: {2: 0, 3: 0, 4: []}}}
+    blk = {24: {23: False, 25: model['pid'], 26: -1}, 9: model['btype'], 10: bool(on), 11: {2: len(vals), 3: n3, 4: vals}}
+    if model['btype'] == IR_TYPE:
+        if not ir_md5:
+            raise SystemExit(f"{model['name']}: an IR block needs the MD5 of the IR in its slot (ir_upload.py list)")
+        blk[27] = ir_md5.encode() if isinstance(ir_md5, str) else ir_md5
+    else:
+        blk[12] = {2: 0, 3: 0, 4: []}
+    return {19: 6, 20: blk}
 
 
 def _entry_offset(blob, pos):
@@ -372,12 +392,27 @@ def _set_snapshot_states(blob, pos, on):
     return blob
 
 
-def add_block(blob, pos, model, values=None, on=True):
-    """blob with model placed in the empty block position pos (1..9 on path A)."""
+PATH_A, PATH_B = range(1, 10), range(12, 21)     # block positions; 0 input, 10 output, 11 split, 21 merge
+
+
+def set_path_b(blob, used):
+    """Split (position 11) and merge (21) flag 18: on when the lower path holds a block; map 0 key 21 likewise."""
+    for path in ((0, 22, 11, 20, 18), (0, 22, 21, 20, 18)):
+        blob = set_in_place(blob, path, bool(used))
+    return set_in_place(blob, (0, 21), 1 if used else 0)
+
+
+def add_block(blob, pos, model, values=None, on=True, ir_md5=None):
+    """blob with model placed in the empty block position pos (1..9 path A, 12..20 path B)."""
+    if pos not in PATH_A and pos not in PATH_B:
+        raise SystemExit(f'block position {pos}: 1..9 (main path) or 12..20 (lower path)')
     o, n = _entry_offset(blob, pos)
     if blob[o:o + n] != EMPTY_BLOCK:
         raise SystemExit(f'block position {pos} is not empty')
-    blob = _replace_entry(blob, pos, msgpack.packb(make_block(model, values, on), use_bin_type=False, use_single_float=True))
+    blob = _replace_entry(blob, pos, msgpack.packb(make_block(model, values, on, ir_md5), use_bin_type=False,
+                                                   use_single_float=True))
+    if pos in PATH_B:
+        blob = set_path_b(blob, True)
     return _set_snapshot_states(blob, pos, on)
 
 
@@ -386,14 +421,76 @@ def remove_block(blob, pos):
     _, body = parse_blob(blob)
     if body[0][22][pos][19] != 6:
         raise SystemExit(f'block position {pos} holds no effect block')
-    return _set_snapshot_states(_replace_entry(blob, pos, EMPTY_BLOCK), pos, True)
+    blob = _set_snapshot_states(_replace_entry(blob, pos, EMPTY_BLOCK), pos, True)
+    _, body = parse_blob(blob)
+    if pos in PATH_B and not any(body[0][22][p][19] == 6 for p in PATH_B):
+        blob = set_path_b(blob, False)
+    return blob
 
 
 DEFAULT_IMAGE = os.path.join(os.path.dirname(HERE), 'build', 'HX_Effects_v3.80.0_NAM_Amps_Effects.hxf')
 
 
-def build_preset(base, spec, by_name):
-    """A preset blob from a base blob (its blocks and footswitches cleared) and a SPEC dict (see the usage)."""
+SNAP_CTRL = 10                   # section 4's list for the snapshot controller (1, 2: the expression pedals)
+EMPTY_SLOT = [False, 64, None]   # an unused snapshot value slot
+
+
+def apply_snapshots(blob, spec, by_name):
+    """Snapshot settings from spec['snapshots'] (see the usage): every controller assignment of the base is cleared
+    (they pointed at its blocks), then each snapshot knob gets a controller entry and a value slot in every
+    snapshot; the blocks hold the current snapshot's values. Worked out from preset 24A (HX Edit, 2026-11-21)."""
+    _, body = parse_blob(blob)
+    snaps = body[10][10]
+    n = len(snaps)
+    blob = replace_node(blob, (4,), [None] * len(body[4]))
+    for k in range(n):
+        blob = replace_node(blob, (10, 10, k, 2), [list(EMPTY_SLOT) for _ in snaps[k][2]])
+    blob = set_in_place(blob, (10, 8), 0)
+    sp = spec.get('snapshots')
+    if not sp:
+        return blob
+    cur = int(sp.get('current', 1)) - 1
+    if not 0 <= cur < n:
+        raise SystemExit(f'snapshots.current: 1..{n}')
+    blocks = {int(b['pos']): b for b in spec['blocks']}
+    for k, name in enumerate(sp.get('names', [])[:n]):
+        blob = replace_node(blob, (10, 10, k, 4), name.encode('utf-8') + b'\0')
+    for pos, states in (sp.get('states') or {}).items():
+        pos = int(pos)
+        if pos not in blocks or len(states) != n:
+            raise SystemExit(f'snapshots.states[{pos}]: a block position from blocks, with {n} on/off values')
+        for k in range(n):
+            blob = set_in_place(blob, (10, 10, k, 3, pos, 1), bool(states[k]))
+        blob = set_in_place(blob, (0, 22, pos, 20, 10), bool(states[cur]))
+    entries = []
+    for slot, kn in enumerate(sp.get('knobs', [])):
+        pos = int(kn['pos'])
+        if pos not in blocks:
+            raise SystemExit(f'snapshots.knobs: no block at {pos}')
+        m = by_name[blocks[pos]['model']]
+        names = [p['name'] for p in m['params']]
+        ki = names.index(kn['knob']) if isinstance(kn['knob'], str) else int(kn['knob'])
+        p, vals = m['params'][ki], kn['values']
+        if len(vals) != n:
+            raise SystemExit(f"snapshots.knobs {kn['knob']}: {n} values, one per snapshot")
+        if slot >= len(snaps[0][2]):
+            raise SystemExit(f'at most {len(snaps[0][2])} snapshot knobs')
+        vals = [block_value(p['type'], v) for v in vals]
+        for k in range(n):
+            blob = replace_node(blob, (10, 10, k, 2, slot), [False, slot, vals[k]])
+        blob = set_in_place(blob, (0, 22, pos, 20, 11, 4, ki), vals[cur])
+        entries.append({0: ki, 1: {0: SNAP_CTRL, 1: 4, 2: float(p['min']), 3: float(p['max']), 4: 0, 5: pos,
+                                   6: {28: 0, 29: slot, 41: False}, 7: 0, 13: False}})
+    if entries:
+        entries.reverse()                          # HX Edit lists the last assigned first (24A)
+        blob = replace_node(blob, (4, SNAP_CTRL), entries)
+        blob = set_in_place(blob, (10, 8), len(entries))
+    return set_in_place(blob, (10, 6), cur)
+
+
+def build_preset(base, spec, by_name, ir_md5s=None):
+    """A preset blob from a base blob (its blocks and footswitches cleared) and a SPEC dict (see the usage).
+    ir_md5s: {IR slot: MD5 hex} of the unit's User IRs, for IR blocks (their first knob is the slot)."""
     _, body = parse_blob(base)
     blob = base
     for pos, blk in enumerate(body[0][22]):
@@ -412,14 +509,23 @@ def build_preset(base, spec, by_name):
             if bad:
                 raise SystemExit(f"{b['model']}: no knob {bad} (knobs: {names})")
             vals = [vals.get(p['name'], p['default']) for p in m['params']]
-        if not 1 <= int(b['pos']) <= 9:
-            raise SystemExit('block positions are 1..9 (path A)')
-        blob = add_block(blob, int(b['pos']), m, vals, b.get('on', True))
+        md5 = None
+        if m['btype'] == IR_TYPE:
+            slot = int((vals or [m['params'][0]['default']])[0])
+            md5 = (ir_md5s or {}).get(slot)
+            if not md5:
+                raise SystemExit(f"{b['model']} at {b['pos']}: User IR slot {slot} is empty on the unit")
+        blob = add_block(blob, int(b['pos']), m, vals, b.get('on', True), md5)
         if b.get('footswitch'):
             fs = int(b['footswitch'])
             if not 1 <= fs <= len(body[3][8]):
                 raise SystemExit(f'footswitch {fs}: 1..{len(body[3][8])}')
             blob = replace_node(blob, (3, 8, fs - 1), footswitch(int(b['pos']), b.get('label') or m['display'] or m['name']))
+    blob = apply_snapshots(blob, spec, by_name)
+    # where the split and merge sit: always set, never taken from the base. 1 and 10 is the usual layout (66 of 91
+    # presets on the unit); a base with 0 and 0 (HX Edit wrote one) left the unit's block diagram empty (2026-11-22).
+    for key, path, default in (('split', (0, 22, 11, 20, 15, 13), 1), ('merge', (0, 22, 21, 20, 17, 13), 10)):
+        blob = set_in_place(blob, path, int(spec.get(key, default)))
     return blob
 
 
@@ -517,7 +623,9 @@ def main():
                         break
                 if base is None:
                     raise flash.FlashError('no base preset to build on (try --base 1A)')
-                blob = build_preset(base, spec, by_name)
+                irs = {sl: md5 for sl, _, md5 in api.ir_list() if md5} if any(
+                    by_name.get(b['model'], {}).get('btype') == IR_TYPE for b in spec['blocks']) else {}
+                blob = build_preset(base, spec, by_name, irs)
                 api.preset_write(n, blob, spec.get('name', 'New Preset'))
                 return blob, api.preset_read(n)
             blob, back = session(go)

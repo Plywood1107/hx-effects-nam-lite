@@ -136,3 +136,22 @@ Worked out from all 91 presets on the unit (read with op 4; not committed: they'
   imported from .hlx carried `10: 0` entries with an extra key that the unit did not honour on a rebuilt preset.
 - Not covered yet: IR and cab blocks (more fields; a hash key 27), amps, path B, snapshot-specific knob values,
   controller (expression) assignments.
+
+### Amps, IR blocks, the lower path and snapshots (2026-11-22, tested on the unit: 24B "Builder Test")
+
+From test presets 23C, 23D and 24A made in HX Edit (read with op 4), checked byte for byte against HX Edit's own:
+- **Amps and preamps** are ordinary blocks (block type 17). The amps build moves Entry 0 Table 1 to 0x29000000 with
+  688 rows: read it through `TAB1_BASE_PTRS[0]`, with the largest of the `TAB1_CNT_INSNS` counts.
+- **IR blocks** (type 19): values `[IR slot, Low Cut, High Cut, Mix, Level]`, **no key 12**, and key 27 = the MD5 (hex)
+  of the IR's samples in that slot, as `ir_upload.py list` shows it (HX Edit writes it with or without a NUL).
+- **The lower path**: positions 12..20. The split (11, `15: {8: 257, 13: where it sits}`) and merge (21, `17: {8: 151,
+  13: where it sits}`) carry `18: True` and map 0 key 21 = 1 while the lower path holds a block. **Always write the
+  split/merge places** (1 and 10 normally): a base with 0 and 0 (HX Edit saved 24A that way) left the unit's block
+  diagram empty for every preset built on it, and the first one crashed the unit when its signal flow was opened.
+- **Snapshots** (map key 10 → 10 → [4 snapshots]): `4` name, `3` [position] = [?, on], `2` [slot] = [False, slot,
+  value] or `[False, 64, None]` when unused. A snapshot knob is one entry in **section 4's list 10** (the snapshot
+  controller; lists 1 and 2 are the expression pedals): `{0: knob, 1: {0: 10, 1: 4, 2: min, 3: max, 4: 0, 5: block
+  position, 6: {28: 0, 29: slot, 41: False}, 7: 0, 13: False}}`, latest first. Key 10 → 6 is the current snapshot
+  (the blocks hold its values) and 10 → 8 the number of snapshot knobs. Top-level key 6 is the selected position.
+- Not covered: expression pedal and footswitch controller assignments (section 4 lists 1, 2 …), Command Center
+  (section 2), snapshot-specific tempo, per-snapshot footswitch labels.
