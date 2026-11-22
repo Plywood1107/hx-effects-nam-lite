@@ -80,6 +80,9 @@ def rand_spec(rng, by_name, irs, nsnap):
         spec['controls'] = ctl
     if rng.random() < 0.3:
         spec['split'], spec['merge'] = rng.randint(0, 5), rng.randint(6, 10)
+        spec['split_values'] = [round(rng.random(), 3), round(rng.random(), 3)]
+        spec['merge_values'] = [round(rng.uniform(-60, 12), 1), round(rng.random(), 3), round(rng.uniform(-60, 12), 1),
+                                round(rng.random(), 3), rng.random() < 0.5, round(rng.uniform(-60, 12), 1)]
     if rng.random() < 0.7:
         sn = {'current': rng.randint(1, nsnap)}
         if rng.random() < 0.5:

@@ -6,7 +6,7 @@
 // PRESET.build(base, spec, models, irMd5s) -> Uint8Array
 //   base     a preset blob read from the unit (its snapshots, tempo and settings are kept; blocks, footswitches,
 //            controller assignments and snapshot values are replaced)
-//   spec     {name, split, merge, blocks: [{pos, model, values, on, footswitch, label, midi_bypass, snapshot_bypass}],
+//   spec     {name, split, merge, split_values, merge_values, blocks: [{pos, model, values, on, footswitch, label, midi_bypass, snapshot_bypass}],
 //            snapshots: {...}, controls: [...]}, as
 //            preset_send.py build takes it; model is a firmware model name, values by position or by knob name
 //   models   FW_MODELS.builds[build]: {name: [pid, block type, [[knob, type, default, min, max], ...], display name]}
@@ -344,6 +344,9 @@
     blob = applyControls(blob, spec, models);
     blob = setInPlace(blob, [0, 22, 11, 20, 15, 13], spec.split ?? 1);    // always written: see the format notes
     blob = setInPlace(blob, [0, 22, 21, 20, 17, 13], spec.merge ?? 10);
+    // the split's knobs [Balance A, Balance B] and the merge mixer's [A Level, A Pan, B Level, B Pan, B Polarity, Level]
+    for (const [key, path] of [["split_values", [0, 22, 11, 20, 15, 7, 4]], ["merge_values", [0, 22, 21, 20, 17, 7, 4]]])
+      (spec[key] || []).forEach((v, i) => { if (v != null) blob = setInPlace(blob, [...path, i], v); });
     return blob;
   }
 

@@ -22,7 +22,8 @@ SPEC: {"name": "My Preset", "split": 1, "merge": 10, "blocks": [{"pos": 1, "mode
   model is a firmware model name (models lists them; a custom effect is listed under the stock block it took over,
   with its own knobs); values are by position or by knob name, the rest stay at the model's defaults; footswitch is
   1..6. pos is 1..9 on the main path, 12..20 on the lower path (between the split and the merge, whose places
-  "split"/"merge" set, 0..10). An IR block's first knob is its User IR slot, which must hold an IR. The base preset (default: SLOT itself, else 1A) gives the snapshot, tempo and global settings; its blocks and
+  "split"/"merge" set, 0..10). "split_values": [Balance A, Balance B] (0..1, 0.5 centre) and "merge_values": [A Level,
+  A Pan, B Level, B Pan, B Polarity, Level] (dB -60..12, pans 0..1, polarity true = inverted) set the split and merge. An IR block's first knob is its User IR slot, which must hold an IR. The base preset (default: SLOT itself, else 1A) gives the snapshot, tempo and global settings; its blocks and
   footswitches are cleared first.
   "snapshots": {"current": 1, "names": ["Clean", "Drive", ...], "states": {"2": [true, true, false, true]},
                 "knobs": [{"pos": 1, "knob": "Drive", "values": [0.1, 0.2, 0.3, 0.4]}, ...]}
@@ -622,6 +623,11 @@ def build_preset(base, spec, by_name, ir_md5s=None):
     # presets on the unit); a base with 0 and 0 (HX Edit wrote one) left the unit's block diagram empty (2026-11-22).
     for key, path, default in (('split', (0, 22, 11, 20, 15, 13), 1), ('merge', (0, 22, 21, 20, 17, 13), 10)):
         blob = set_in_place(blob, path, int(spec.get(key, default)))
+    # the split's knobs [Balance A, Balance B] and the merge mixer's [A Level, A Pan, B Level, B Pan, B Polarity, Level]
+    for key, path in (('split_values', (0, 22, 11, 20, 15, 7, 4)), ('merge_values', (0, 22, 21, 20, 17, 7, 4))):
+        for i, v in enumerate(spec.get(key) or []):
+            if v is not None:
+                blob = set_in_place(blob, path + (i,), v)
     return blob
 
 

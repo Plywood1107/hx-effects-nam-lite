@@ -28,10 +28,18 @@ Edit or changing the builds (fw-models.js needs the built images in build/ and L
 
 **Send to unit** writes the preset straight into a slot over USB (WebUSB: Chrome or Edge, HX Edit and Line 6 Updater
 closed), the way `tools/preset_send.py build` does, with `preset-core.js` (the same bytes: `check_core.py`). Every knob
-reaches the unit, custom effects' own knobs included; it reads the slot back to check it, and can load it. The
-preset's snapshot names and settings come from the slot it replaces (an empty slot uses 1A's). **Read from unit**
-loads a preset from the unit into the page (main path; lower-path blocks are not shown yet). Each block can have a
-bypass footswitch (several blocks may share one). Models HX Edit 3.82 knows but the unit's 3.80 firmware doesn't
+reaches the unit, custom effects' own knobs included; it reads the slot back to check it, and can load it. **Read from unit**
+loads a preset from the unit into the page. Everything below travels both ways:
+- **Two paths**: path A and path B (the lower path), nine blocks each; drag blocks between them. Split and Merge set
+  where path B leaves and rejoins path A: drag the two points on the diagram (or use the dropdowns). Click a point
+  for its settings: the split's Balance A/B, and the merge's A/B Level and Pan, B Polarity and output Level.
+- **Snapshots**: the four snapshot buttons above the chain pick the one you're editing (and the one the unit opens
+  on); rename it in the box next to them. A block's On/Bypassed is per snapshot. Turn **Snapshot bypass** off on a
+  block to keep it the same in every snapshot.
+- **Footswitch** and **MIDI bypass CC** per block (several blocks may share a footswitch).
+- **Save file / Open file**: keeps all of the above in a `.json` file (Open file also takes an `.hlx`).
+- **Knob controllers**: under each knob, Fixed, Snapshots (a value per snapshot: set it with the knob in each
+  snapshot), EXP 1/2, FS1–6 (switches between Min and Max) or MIDI CC (with Min and Max). Models HX Edit 3.82 knows but the unit's 3.80 firmware doesn't
 (Transient Shaper, Shuffling/Euclidean Delay, ...) can't be sent.
 
 ## How the custom effects travel
@@ -49,7 +57,7 @@ effects once they are on the unit (README: "code −8200").
 
 The rest of this section is about the .hlx route; Send to unit doesn't need it.
 
-Limits: one chain of nine blocks on path A of `dsp0` (path B blocks are skipped on import), no snapshots or
-controller assignments, no cabs. Importing a preset from another device keeps the blocks the chosen build has and
+Limits of the .hlx route: both paths and each block's snapshot bypass go into the .hlx, but not snapshots or
+controller assignments; no cabs. Importing a preset from another device keeps the blocks the chosen build has and
 skips the rest. DSP load for the firmware models is their build cost scaled as HX Edit's amp figures are
 (1000 cost = 10%).

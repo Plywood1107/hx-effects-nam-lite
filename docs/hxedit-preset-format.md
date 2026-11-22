@@ -148,6 +148,9 @@ From test presets 23C, 23D and 24A made in HX Edit (read with op 4), checked byt
   13: where it sits}`) carry `18: True` and map 0 key 21 = 1 while the lower path holds a block. **Always write the
   split/merge places** (1 and 10 normally): a base with 0 and 0 (HX Edit saved 24A that way) left the unit's block
   diagram empty for every preset built on it, and the first one crashed the unit when its signal flow was opened.
+- **The split and merge knobs**: the split's `15 → 7 → 4` = [Balance A, Balance B, bypass] (0..1, 0.5 centre) and
+  the merge mixer's `17 → 7 → 4` = [A Level, A Pan, B Level, B Pan, B Polarity, Level] (dB −60..+12, pans 0..1),
+  HX Edit's `HD2_AppDSPFlowSplitY` and `HD2_AppDSPFlowJoin` (io.models) in that order; read from 91 presets.
 - **Snapshots** (map key 10 → 10 → [4 snapshots]): `4` name, `3` [position] = [?, on], `2` [slot] = [False, slot,
   value] or `[False, 64, None]` when unused. A snapshot knob is one entry in **section 4's list 10** (the snapshot
   controller; lists 1 and 2 are the expression pedals): `{0: knob, 1: {0: 10, 1: 4, 2: min, 3: max, 4: 0, 5: block
