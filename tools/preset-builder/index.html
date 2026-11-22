@@ -242,6 +242,9 @@ const BUILDS = { stock: "Stock 3.80", nam: "NAM build", amps: "NAM + Amps build"
 const BUILD_ORDER = ["stock", "nam", "amps", "full"];
 const AMP_LIMIT = 3;   // amps + preamps per preset on the amp builds (docs/amps-findings.md)
 const TRAILS_TYPES = [8, 9, 13];   // delays/reverbs: a preset stores a Trails switch after their knobs (preset-core.js)
+// The firmware's DSP cost units per percent: the unit runs a preset up to about 7,500 units and loads one above that
+// empty (stock blocks only: 7,350 ran, 7,650 loaded empty; amp presets agree: 7,150 ran, 7,970 empty; 2026-11-22).
+const COST_PER_PERCENT = 75;
 // ids saved pages used for the custom effects before the page read the firmware -> their firmware names
 const OLD_IDS = { HD2_AmpNAMLite: "HD2_DistRegalBassDIMono", HD2_ClickMetronome: "HD2_DelayModChorusEchoMono",
   HD2_DistGeiger: "HD2_DistMegaphoneMono", HD2_DistCommander: "HD2_DistXenomorphFuzzMono", HD2_DistCorrupt: "HD2_DM4OctaveFuzz",
@@ -316,7 +319,7 @@ function buildModels(build) {
     const firstBuild = BUILD_ORDER.find(b => FWCAT[b] && FWCAT[b][mono || stereo] && FWCAT[b][mono || stereo].display === g.display);
     const m = { id, name: g.display, group: g.group, amp: g.group === "Amp" || g.group === "Preamp",
                 mono: !!mono, stereo: !!stereo, fwNames: { mono, stereo }, btype: main.btype,
-                load: mono ? cat[mono].cost / 100 : null, loadStereo: stereo ? cat[stereo].cost / 100 : null, params };
+                load: mono ? cat[mono].cost / COST_PER_PERCENT : null, loadStereo: stereo ? cat[stereo].cost / COST_PER_PERCENT : null, params };
     if (firstBuild && firstBuild !== "stock") m.fw = { build: firstBuild };
     out.push(m);
   }

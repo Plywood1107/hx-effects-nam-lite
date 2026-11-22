@@ -25,7 +25,8 @@ The **Firmware** menu picks which of this repo's builds is on the unit (`build.p
 | NAM + Amps build | the HX Stomp's 111 amps (Amp) and 112 preamps (Preamp), at most three per preset |
 | Full build | the effects a plain `build_all.py` makes (Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, ...) |
 
-Models added by a build are marked ★. DSP load is the firmware's own cost for each model (100 = 1%); the page
+Models added by a build are marked ★. DSP load is the firmware's own cost for each model, 75 units to 1%
+(measured on the unit: a preset over about 7,500 units loads with nothing running); the page
 refuses a block that would take the preset over 100%, or a fourth amp/preamp.
 
 ## Running it locally
