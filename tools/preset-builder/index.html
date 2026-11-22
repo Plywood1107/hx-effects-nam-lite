@@ -66,6 +66,8 @@
   .model { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; width: 100%; text-align: left;
     background: transparent; border: 0; border-radius: 7px; padding: 7px 9px; }
   .model:hover { background: var(--panel-2); }
+  .param select.ir-empty { border-color: var(--warn); }
+  .warn-text { color: var(--warn); }
   .model.nofit { opacity: .35; cursor: not-allowed; }
   .model.nofit:hover { background: transparent; }
   .model .mg { font-size: 11px; color: var(--c, var(--muted)); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -273,11 +275,13 @@ try {
   adoptState(JSON.parse(localStorage.getItem(STORE_KEY) || "null"));
   const savedUi = JSON.parse(localStorage.getItem(STORE_KEY + "-ui") || "null");
   if (savedUi) ui = { ...ui, ...savedUi, query: "" };
+  ui.irs = JSON.parse(localStorage.getItem(STORE_KEY + "-irs") || "null");
 } catch (e) { /* storage unavailable: start fresh */ }
 function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     localStorage.setItem(STORE_KEY + "-ui", JSON.stringify({ group: ui.group }));
+    if (ui.irs) localStorage.setItem(STORE_KEY + "-irs", JSON.stringify(ui.irs));
   } catch (e) { /* ignore */ }
 }
 
@@ -774,6 +778,16 @@ function renderParam(b, p) {
   const v = b.values[p.symbolicID] ?? paramDefault(p, b.stereo);
   const lbl = el("label", { class: "lbl", for: id, title: p.name }, p.name);
   const cell = (...kids) => el("div", { class: "param" }, lbl, ...kids, renderCtl(b, p, id));
+  if (p.displayType === "ir_select") {
+    const irs = ui.irs;
+    const name = n => irs ? (irs[n] ? `${n}  ${irs[n]}` : `${n}  (empty)`) : `IR ${n}`;
+    return cell(
+      el("select", { id, class: irs && !irs[v] ? "ir-empty" : "", onchange: e => { putValue(b, p.symbolicID, +e.target.value); render(); } },
+        Array.from({ length: p.max - p.min + 1 }, (_, i) => el("option", { value: p.min + i, selected: p.min + i === v }, name(p.min + i)))),
+      el("button", { class: "btn small", title: "Read the names of the IRs on the unit (Chrome or Edge, HX Edit closed)",
+        onclick: () => loadIrList() }, irs ? "Refresh IR names" : "Get IR names from unit"),
+      irs && !irs[v] ? el("span", { class: "meta warn-text" }, "No IR in this slot on the unit") : null);
+  }
   if (p.labels && p.valueType !== 2) {
     return cell(el("select", { id, onchange: e => { putValue(b, p.symbolicID, +e.target.value); render(); } },
       Object.entries(p.labels).map(([k, l]) => el("option", { value: k, selected: +k === v }, l))));
@@ -1181,6 +1195,20 @@ function loadFromBlob(blob) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// The names of the IRs on the unit, for the IR blocks' slot choice: {slot: name}, empty slots left out
+function keepIrList(list) {
+  ui.irs = {};
+  for (const e of list) if (e.md5) ui.irs[e.slot] = e.name || `IR ${e.slot}`;
+  save();
+}
+async function loadIrList() {
+  if (!navigator.usb) { toast("Reading the unit needs Chrome or Edge (WebUSB)."); return; }
+  try {
+    keepIrList(await FLASHER.irSession({ usb: navigator.usb, log: () => {} }, api => api.list()));
+    render();
+    toast(`${Object.keys(ui.irs).length} IRs on the unit.`);
+  } catch (e) { toast("Could not reach the unit: " + e.message + " (quit HX Edit first)"); }
+}
 const slotLabel = n => `${Math.floor(n / 4) + 1}${"ABCD"[n % 4]}`;
 async function unitDialog(mode) {
   if (!navigator.usb) { toast("Sending needs Chrome or Edge (WebUSB)."); return; }
@@ -1224,7 +1252,9 @@ async function unitDialog(mode) {
     go.disabled = true; sel.disabled = true;
     try {
       if (mode === "read") {
-        const blob = await session(api => api.presetRead(n));
+        let irList = null;
+        const blob = await session(async api => { const x = await api.presetRead(n); try { irList = await api.list(); } catch (e) {} return x; });
+        if (irList) keepIrList(irList);
         if (!blob) { say(`${slotLabel(n)} is empty.`); go.disabled = false; sel.disabled = false; return; }
         const r = loadFromBlob(blob);
         state.name = target.name;
@@ -1239,7 +1269,11 @@ async function unitDialog(mode) {
         let base = await api.presetRead(n);
         if (!base) base = await api.presetRead(0);             // an empty slot: build on 1A's settings
         let irs = {};
-        if (spec.blocks.some(b => fwTable()[b.model][1] === 19)) for (const e of await api.list()) if (e.md5) irs[e.slot] = e.md5;
+        if (spec.blocks.some(b => fwTable()[b.model][1] === 19)) {
+          const l = await api.list();
+          for (const e of l) if (e.md5) irs[e.slot] = e.md5;
+          keepIrList(l);
+        }
         const blob = PRESET.build(base, spec, fwTable(), irs);
         say(`Built ${blob.length} bytes; writing ${slotLabel(n)}…`);
         await api.presetWrite(n, blob, spec.name, sleep);
