@@ -2,6 +2,10 @@
 
 Status 2026-11-21. Pick up from here on any machine.
 
+**Since 2026-11-22** the page reads its models from the person's own firmware file (`fw-reader.js`, see
+`tools/preset-builder/README.md`). `extract_hx_data.py`, `firmware_models.py`, `host_params.json` and
+`dump_host_params.py` below are gone; the rest of this plan is kept as the history.
+
 ## Goal
 
 A simple web page for building **HX Effects** presets, and nothing else: no HX Stomp, no Helix. It's a separate

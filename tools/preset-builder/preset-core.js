@@ -311,10 +311,13 @@
     });
     for (const [source, entries] of lists) blob = replaceNode(blob, [4, source], entries.slice().reverse());
     for (const [f, entries] of fs) {
-      // several blocks on one switch: numbered in field 10, the first assigned 7, the next 6 (25C, HX Edit)
+      // field 10, in assignment order (HX Edit, 2026-11-22): the first entry 7 if it turns a block on/off, 0 if it
+      // moves a knob; every later one counts down from 7 (after a knob) or 6 (after an on/off). Two knob entries both
+      // left at 0 froze the unit when it was asked for its state, and at start-up.
+      let c = 7;
       entries.forEach((e, k) => {
-        const inner = e.pairs.find(p => p[0] === 11)[1];
-        if (inner.pairs.find(p => p[0] === 0)[1] === 1) e.pairs.find(p => p[0] === 10)[1] = 7 - k;
+        const inner = e.pairs.find(p => p[0] === 11)[1], bypass = inner.pairs.find(p => p[0] === 0)[1] === 1;
+        e.pairs.find(p => p[0] === 10)[1] = k === 0 && !bypass ? 0 : c--;
       });
       blob = replaceNode(blob, [3, 8, f - 1], entries.slice().reverse());
     }

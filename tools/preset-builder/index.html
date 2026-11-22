@@ -68,6 +68,12 @@
   .model:hover { background: var(--panel-2); }
   .param select.ir-empty { border-color: var(--warn); }
   .warn-text { color: var(--warn); }
+  .fw-load { max-width: 620px; margin: 60px auto; padding: 24px; }
+  .fw-load h1 { font-size: 20px; margin: 0 0 12px; }
+  .fw-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 34px 16px; margin: 16px 0;
+    border: 2px dashed var(--line-2); border-radius: 14px; cursor: pointer; text-align: center; }
+  .fw-drop.over, .fw-drop:hover { border-color: var(--accent); background: rgba(63,184,255,.06); }
+  .side-foot a { color: var(--muted); }
   .model.nofit { opacity: .35; cursor: not-allowed; }
   .model.nofit:hover { background: transparent; }
   .model .mg { font-size: 11px; color: var(--c, var(--muted)); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -196,65 +202,230 @@
 <body>
 <div id="app"></div>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="hx-data.js"></script>
-<script src="fw-models.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
 <script src="preset-core.js"></script>
-<script src="../../web/flasher.js"></script>
+<script src="fw-reader.js"></script>
 <script>
 "use strict";
-const HX = window.HX_DATA;
+// The setup page's files (flasher.js, firmware-core.js, the recipes): beside this page's folder on the website,
+// in web/ when served from the repository (python3 -m http.server from the repo root, README).
+const WEB = location.pathname.includes("/tools/preset-builder/") ? "../../web/" : "../";
 const app = document.getElementById("app");
-
-if (!HX) {
-  app.innerHTML = `<div class="missing"><h2>Model data not found</h2>
-    <p>This page reads models from your own HX Edit install. Run this once in this folder, then reload:</p>
-    <p><code>python3 tools/preset-builder/extract_hx_data.py</code></p></div>`;
-  throw new Error("hx-data.js missing");
-}
+const loadScript = src => new Promise((ok, fail) => {
+  const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => fail(new Error("could not load " + src));
+  document.head.append(s);
+});
 
 // ---------- constants ----------
 // HX Effects only: one DSP, nine blocks on each of path A and path B of dsp0 (see docs/hxedit-preset-format.md)
 const SLOTS = 9;
 const DEVICES = {
-  hfx: { label: "HX Effects", id: 2162693, template: "hfx", rows: 2 },
+  hfx: { label: "HX Effects", rows: 2 },
 };
 const GROUPS = ["Distortion","Dynamics","EQ","Modulation","Delay","Reverb","Pitch/Synth","Filter","Wah",
-                "Amp","Preamp","Cab","IR","Volume/Pan","Send/Return","Looper"];
+                "Amp","Preamp","IR","Volume/Pan","Send/Return","Looper"];
 const COLORS = {
   "Distortion":"#f5901e","Dynamics":"#e3cf2a","EQ":"#b8bec6","Modulation":"#3d94f0","Delay":"#33c27a",
   "Reverb":"#e7739a","Pitch/Synth":"#a07bff","Filter":"#cf74e0","Wah":"#c98a4b","Amp":"#ff5a4e",
-  "Preamp":"#ff8a7a","Cab":"#b39579","IR":"#8fb57a","Volume/Pan":"#86aec4","Send/Return":"#a5a8d6","Looper":"#d9b24c",
+  "Preamp":"#ff8a7a","IR":"#8fb57a","Volume/Pan":"#86aec4","Send/Return":"#a5a8d6","Looper":"#d9b24c",
 };
-// HX Edit gives some variants the same name: tell them apart
-for (const m of HX.models) {
-  if (/Dual$/.test(m.id) && m.group === "IR") m.name = "Dual IR";
-  else if (/^HD2_DL4/.test(m.id)) m.name += " (DL4)";
-  else if (/V2$/.test(m.id) && !/V2/.test(m.name)) m.name += " V2";
-  else if (/^HD2_Preamp/.test(m.id) && m.group === "Amp") m.name += " Pre";
-}
-const byId = Object.fromEntries(HX.models.map(m => [m.id, m]));
+// the firmware's model categories -> the browser's groups
+const CATEGORY_GROUP = {
+  distortion: "Distortion", dynamics: "Dynamics", eq: "EQ", modulation: "Modulation", delay: "Delay", reverb: "Reverb",
+  pitch: "Pitch/Synth", synth: "Pitch/Synth", filter: "Filter", wah: "Wah", amp: "Amp", preamp: "Preamp", ir: "IR",
+  volume: "Volume/Pan", send: "Send/Return", return: "Send/Return", fxloop: "Send/Return", looper: "Looper",
+};
 const STORE_KEY = "hx-effects-preset-builder-v2";
 // This repo's firmware builds (build.py), each adding to the one before
 const BUILDS = { stock: "Stock 3.80", nam: "NAM build", amps: "NAM + Amps build", full: "Full build" };
-const BUILD_ORDER = HX.builds || ["stock", "nam", "amps", "full"];
+const BUILD_ORDER = ["stock", "nam", "amps", "full"];
 const AMP_LIMIT = 3;   // amps + preamps per preset on the amp builds (docs/amps-findings.md)
+const TRAILS_TYPES = [8, 9, 13];   // delays/reverbs: a preset stores a Trails switch after their knobs (preset-core.js)
+// ids saved pages used for the custom effects before the page read the firmware -> their firmware names
+const OLD_IDS = { HD2_AmpNAMLite: "HD2_DistRegalBassDIMono", HD2_ClickMetronome: "HD2_DelayModChorusEchoMono",
+  HD2_DistGeiger: "HD2_DistMegaphoneMono", HD2_DistCommander: "HD2_DistXenomorphFuzzMono", HD2_DistCorrupt: "HD2_DM4OctaveFuzz",
+  HD2_DistOttobit: "HD2_DistBitcrusherMono", HD2_DistDoomChug: "HD2_DistPocketFuzzMono", HD2_DistPureWhitey: "HD2_DistTycoctaviaFuzzMono",
+  HD2_PitchGreasyStrangler: "VIC_PitchBoctaverMono", HD2_DelayDrumChapel: "VIC_DelayRatchetMono",
+  HD2_PitchBethblahem: "HD2_PitchTwinHarmonyMono", HD2_DelayPuggyPuncher: "HD2_DelaySweepEchoMono" };
+
+// ---------- the model data, read from the person's firmware file (fw-reader.js) ----------
+// FWCAT: {build: {firmware name: {pid, btype, cost, display, category, subcategory, params}}}, kept in IndexedDB.
+// From it: FWT (the tables preset-core.js builds presets with) and the browser's models for the chosen build.
+let FWCAT = null, FWT = {}, MODELS = [], byId = {}, byFw = {};
+const fwTable = () => FWT[state.build];
+const VALUE_TYPE = { 1: 2, 2: 0, 3: 1 };          // firmware knob type -> the page's valueType (2 switch, 0 whole, 1 decimal)
+
+function pageParam(fp) {
+  const m = fp.meta || {}, vt = VALUE_TYPE[fp.type];
+  const p = { symbolicID: fp.name, name: m.displayName || fp.name, valueType: vt, slot: fp.slot, displayType: m.displayType || "",
+              units: m.units, min: fp.min, max: fp.max, default: fp.default };
+  if (vt === 2) {
+    Object.assign(p, { min: false, max: true, default: !!fp.default });
+    if (m.false != null || m.true != null) p.labels = { 0: m.false ?? "Off", 1: m.true ?? "On" };
+  } else {
+    if (typeof p.default !== "number" || Number.isNaN(p.default)) p.default = p.min;
+    const labels = {};
+    for (const [k, v] of Object.entries(m)) if (/^-?\d+$/.test(k) && typeof v === "string") labels[k] = v;
+    if (vt === 0 && Object.keys(labels).length) p.labels = labels;
+    if (m.valueMinString) p.minString = m.valueMinString;
+    if (m.valueMaxString) p.maxString = m.valueMaxString;
+    if (m.valueMidString) p.midString = m.valueMidString;
+  }
+  return p;
+}
+const usable = fp => VALUE_TYPE[fp.type] != null && (fp.meta || {}).units !== "Hide";
+
+// One browser model per effect: a firmware model's mono and stereo versions together when they are the same effect
+// (same display name). A custom effect takes over a stock model's mono version only, so then they stand apart.
+function buildModels(build) {
+  const cat = FWCAT[build], stock = FWCAT.stock, groups = new Map();
+  for (const [name, fm] of Object.entries(cat)) {
+    const group = CATEGORY_GROUP[fm.category];
+    if (!group) continue;
+    const mm = name.match(/^(.*?)(Mono|Stereo)(V\d+)?$/);
+    const base = mm ? mm[1] + (mm[3] || "") : name, kind = mm ? mm[2].toLowerCase() : null;
+    const key = base + "|" + fm.display;
+    if (!groups.has(key)) groups.set(key, { base, display: fm.display, group, variants: {} });
+    groups.get(key).variants[kind || "only"] = name;
+  }
+  const out = [], taken = new Set();
+  for (const g of groups.values()) {
+    const v = g.variants, mono = v.mono || (v.only && !v.stereo ? v.only : null), stereo = v.stereo || null;
+    const main = cat[mono || stereo];
+    // the id: the effect's base name, unless another model of that base already has it (a custom effect's mono)
+    let id = g.base;
+    const sameBase = [...groups.values()].filter(x => x.base === g.base);
+    if (sameBase.length > 1 && !(stock[stereo || mono] && stock[stereo || mono].display === g.display)) id = mono || stereo;
+    if (taken.has(id)) id = mono || stereo;
+    taken.add(id);
+    const params = main.params.filter(usable).map(pageParam);
+    if (mono && stereo) {
+      for (const fp of cat[stereo].params.filter(usable)) {
+        const p = params.find(q => q.symbolicID === fp.name), sp = pageParam(fp);
+        if (!p) params.push({ ...sp, "stereo-only": true });
+        else {
+          if (sp.default !== p.default) p.default_stereo = sp.default;
+          if (sp.max !== p.max) p.max_stereo = sp.max;
+        }
+      }
+    }
+    const last = main.params[main.params.length - 1];
+    if (TRAILS_TYPES.includes(main.btype) && !(last && last.type === 1 && (last.name === "DryThru" || last.name === "Trails")))
+      params.push({ symbolicID: "@trails", name: "Trails", valueType: 2, min: false, max: true, default: false, labels: { 0: "Off", 1: "On" } });
+    const firstBuild = BUILD_ORDER.find(b => FWCAT[b] && FWCAT[b][mono || stereo] && FWCAT[b][mono || stereo].display === g.display);
+    const m = { id, name: g.display, group: g.group, amp: g.group === "Amp" || g.group === "Preamp",
+                mono: !!mono, stereo: !!stereo, fwNames: { mono, stereo }, btype: main.btype,
+                load: mono ? cat[mono].cost / 100 : null, loadStereo: stereo ? cat[stereo].cost / 100 : null, params };
+    if (firstBuild && firstBuild !== "stock") m.fw = { build: firstBuild };
+    out.push(m);
+  }
+  // names the firmware shares between models: the IR blocks are all "IR", both loopers "Looper ..."
+  for (const m of out) {
+    const n = m.fwNames.mono || m.fwNames.stereo, ir = /ImpulseResponse(\d+)(Dual)?/.exec(n), lp = /LooperOneSwitch(Mono|Stereo)/.exec(n);
+    if (ir) m.name = ir[2] ? `Dual IR ${ir[1]}` : `IR ${ir[1]}`;
+    if (lp) m.name = `1-Switch Looper ${lp[1]}`;
+  }
+  // models that share a name in a group (legacy versions and the like): add what tells them apart
+  const seen = {};
+  for (const m of out) (seen[m.group + "|" + m.name] ||= []).push(m);
+  for (const list of Object.values(seen)) if (list.length > 1) for (const m of list.slice(1)) {
+    const tail = (m.fwNames.mono || m.fwNames.stereo).replace(/^[A-Za-z0-9]+_/, "");
+    m.name += ` (${/^(DL4|M13|M9|M5|FM4|MM4|DM4)/.test(tail) ? tail.match(/^[A-Z]+\d+/)[0] : (/_([A-Za-z]+)$/.exec(tail) || [0, "2"])[1]})`;
+  }
+  return out;
+}
+function setModels(build) {
+  MODELS = buildModels(build);
+  byId = Object.fromEntries(MODELS.map(m => [m.id, m]));
+  byFw = {};
+  for (const m of MODELS) for (const n of Object.values(m.fwNames)) if (n) byFw[n] = m;
+}
+function setCatalog(cat) {
+  FWCAT = cat;
+  FWT = {};
+  for (const [b, c] of Object.entries(cat))
+    FWT[b] = Object.fromEntries(Object.entries(c).map(([n, m]) => [n, [m.pid, m.btype, m.params.map(p => [p.name, p.type, p.default, p.min, p.max]), m.display]]));
+}
+
+// IndexedDB: the catalogue read from the firmware stays in this browser, so the file is needed once
+const DB = {
+  open: () => new Promise((ok, fail) => {
+    const r = indexedDB.open("hx-preset-builder", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("fw");
+    r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+  }),
+  async get(k) { const db = await DB.open(); return new Promise((ok, fail) => { const q = db.transaction("fw").objectStore("fw").get(k); q.onsuccess = () => ok(q.result); q.onerror = () => fail(q.error); }); },
+  async put(k, v) { const db = await DB.open(); return new Promise((ok, fail) => { const t = db.transaction("fw", "readwrite"); t.objectStore("fw").put(v, k); t.oncomplete = ok; t.onerror = () => fail(t.error); }); },
+  async del(k) { const db = await DB.open(); return new Promise(ok => { const t = db.transaction("fw", "readwrite"); t.objectStore("fw").delete(k); t.oncomplete = ok; t.onerror = ok; }); },
+};
+const CAT_KEY = "catalog-v1";
+
+// Read the stock file and the three builds the setup page makes from it (their recipes), then keep the result.
+async function readFirmware(file, say) {
+  const md5 = b => SparkMD5.ArrayBuffer.hash(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  const env = { pako, md5 };
+  const stock = new Uint8Array(await file.arrayBuffer());
+  say("Reading the stock firmware…");
+  const arc = FIRMWARE.stockArchive(stock, pako);
+  const recipes = {};
+  for (const b of ["nam", "amps", "full"]) {
+    const r = await fetch(WEB + `recipe-${b}.bin`);
+    if (!r.ok) throw new Error(`recipe-${b}.bin not found`);
+    recipes[b] = new Uint8Array(await r.arrayBuffer());
+  }
+  if (md5(arc) !== FIRMWARE.parseRecipe(pako.inflate(recipes.nam)).stockMd5)
+    throw new Error("That isn't Line 6's HX Effects 3.80.0 firmware (HX_Effects_v3.80.0_0xd97239907.hxf).");
+  const cat = { stock: FWREAD.read(arc) };
+  for (const b of ["nam", "amps", "full"]) {
+    say(`Working out the ${BUILDS[b]}…`);
+    await new Promise(r => setTimeout(r, 0));
+    cat[b] = FWREAD.read(FIRMWARE.archive(stock, recipes[b], env));
+  }
+  await DB.put(CAT_KEY, cat).catch(() => {});
+  return cat;
+}
+
+function renderLoader(msg) {
+  const log = el("p", { class: "meta", id: "fwLog" }, msg || "");
+  const pick = el("input", { type: "file", accept: ".hxf", id: "fwFile", class: "visually-hidden",
+    onchange: e => { const f = e.target.files[0]; if (f) go(f); e.target.value = ""; } });
+  const drop = el("label", { class: "fw-drop", for: "fwFile",
+      ondragover: e => { e.preventDefault(); e.currentTarget.classList.add("over"); },
+      ondragleave: e => e.currentTarget.classList.remove("over"),
+      ondrop: e => { e.preventDefault(); e.currentTarget.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) go(f); } },
+    el("strong", {}, "Drop HX_Effects_v3.80.0_0xd97239907.hxf here"), el("span", { class: "meta" }, "or click to choose it"));
+  async function go(f) {
+    const say = t => { log.textContent = t; };
+    try {
+      setCatalog(await readFirmware(f, say));
+      start();
+    } catch (e) { say("Stopped: " + (e.message === "notHxf" ? "that isn't a firmware (.hxf) file." : e.message)); }
+  }
+  app.replaceChildren(el("div", { class: "fw-load panel" },
+    el("h1", {}, "HX Effects Preset Builder"),
+    el("p", {}, "The builder reads the models, their knobs and their settings from Line 6's firmware for the HX Effects: the same file the setup page asks for. Give it the file once; this browser keeps what it reads."),
+    pick, drop, log,
+    el("p", { class: "meta" }, "The file stays on your computer: nothing is uploaded. Download it from Line 6 (HX Effects, firmware 3.80.0) if you don't have it.")));
+}
+
 
 // ---------- state ----------
 function emptyRows(n) { return Array.from({ length: n }, () => Array(SLOTS).fill(null)); }
 const NSNAP = 4;   // the HX Effects has four snapshots
 const defaultSnaps = () => ({ names: Array.from({ length: NSNAP }, (_, k) => `SNAPSHOT ${k + 1}`), cur: 0 });
-// The split (Y) and the merge mixer: their knobs as the unit stores them, in its order (HX Edit's io.models)
+// The split (Y) and the merge mixer: their knobs as the unit stores them, in its order
 const FLOW_PARAMS = {
   split: [
     { symbolicID: "BalanceA", name: "Balance A", valueType: 1, displayType: "pan", min: 0, max: 1, default: 0.5 },
     { symbolicID: "BalanceB", name: "Balance B", valueType: 1, displayType: "pan", min: 0, max: 1, default: 0.5 }],
   merge: [
-    { symbolicID: "A Level", name: "A Level", valueType: 1, displayType: "volume", min: -60, max: 12, default: 0 },
+    { symbolicID: "A Level", name: "A Level", valueType: 1, displayType: "db", min: -60, max: 12, default: 0 },
     { symbolicID: "A Pan", name: "A Pan", valueType: 1, displayType: "pan", min: 0, max: 1, default: 0.5 },
-    { symbolicID: "B Level", name: "B Level", valueType: 1, displayType: "volume", min: -60, max: 12, default: 0 },
+    { symbolicID: "B Level", name: "B Level", valueType: 1, displayType: "db", min: -60, max: 12, default: 0 },
     { symbolicID: "B Pan", name: "B Pan", valueType: 1, displayType: "pan", min: 0, max: 1, default: 0.5 },
-    { symbolicID: "B Polarity", name: "B Polarity", valueType: 2, displayType: "polarity", min: false, max: true, default: false },
-    { symbolicID: "Level", name: "Level", valueType: 1, displayType: "volume", min: -60, max: 12, default: 0 }],
+    { symbolicID: "B Polarity", name: "B Polarity", valueType: 2, labels: { 0: "Normal", 1: "Inverted" }, min: false, max: true, default: false },
+    { symbolicID: "Level", name: "Level", valueType: 1, displayType: "db", min: -60, max: 12, default: 0 }],
 };
 const defaultFlow = kind => ({ model: "@" + kind, stereo: false, values: Object.fromEntries(FLOW_PARAMS[kind].map(p => [p.symbolicID, p.default])) });
 const flowValues = kind => FLOW_PARAMS[kind].map(p => state[kind + "Block"].values[p.symbolicID] ?? p.default);
@@ -267,12 +438,31 @@ function adoptState(saved) {
   state = { split: 1, merge: 10, snaps: defaultSnaps(), splitBlock: defaultFlow("split"), mergeBlock: defaultFlow("merge"), ...saved, sel: { row: 0, slot: 0 } };
   if (state.rows.length === 1) state.rows.push(Array(SLOTS).fill(null));
   if (!BUILDS[state.build]) state.build = "full";
-  state.rows = state.rows.map(r => Array.from({ length: SLOTS }, (_, i) => (r[i] && byId[r[i].model]) ? r[i] : null));
+  state.rows = state.rows.map(r => Array.from({ length: SLOTS }, (_, i) => r[i] ? migrateBlock(r[i]) : null));
   return true;
 }
+// A block saved by an older page: custom effects had their own ids and knobs named slotN; HX Edit spelled some knob
+// names differently (Gate_Range / Gate Range). Null when the chosen build has no such model.
+function migrateBlock(b) {
+  let m = byId[b.model] || byFw[OLD_IDS[b.model]] || byFw[b.model];
+  if (!m) return null;
+  const values = {};
+  for (const [k, v] of Object.entries(b.values || {})) {
+    const slot = /^slot(\d+)$/.exec(k);
+    const p = m.params.find(q => q.symbolicID === k) || (slot && m.params.find(q => q.slot === +slot[1]))
+      || m.params.find(q => normKnob(q.symbolicID) === normKnob(k));
+    if (p) values[p.symbolicID] = v;
+  }
+  const nb = { ...newBlock(m), ...b, model: m.id };
+  nb.values = { ...newBlock(m).values, ...values };
+  if (nb.stereo && !m.stereo) nb.stereo = false;
+  if (!nb.stereo && !m.mono) nb.stereo = true;
+  if (b.ctl) { nb.ctl = {}; for (const [k, c] of Object.entries(b.ctl)) { const p = m.params.find(q => q.symbolicID === k) || m.params.find(q => normKnob(q.symbolicID) === normKnob(k)); if (p) nb.ctl[p.symbolicID] = c; } }
+  return nb;
+}
+const normKnob = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
 const FILE_FORMAT = "hx-effects-preset-builder";
 try {
-  adoptState(JSON.parse(localStorage.getItem(STORE_KEY) || "null"));
   const savedUi = JSON.parse(localStorage.getItem(STORE_KEY + "-ui") || "null");
   if (savedUi) ui = { ...ui, ...savedUi, query: "" };
   ui.irs = JSON.parse(localStorage.getItem(STORE_KEY + "-irs") || "null");
@@ -287,41 +477,11 @@ function save() {
 
 // ---------- model helpers ----------
 const dev = () => DEVICES[state.device];
-const inBuild = b => BUILD_ORDER.indexOf(b) <= BUILD_ORDER.indexOf(state.build);
-const isCustom = m => !!(m && m.fw && m.fw.host);
-const monoTaken = m => !!(m.fw && m.fw.monoTakenBy && inBuild(m.fw.monoTakenBy.build));
 const canStereo = m => m.stereo === true;
-const canMono = m => m.mono !== false && !monoTaken(m);
-function available(m) {
-  if (m.fw && m.fw.build) return inBuild(m.fw.build);           // added by a firmware build
-  if (!canMono(m) && !canStereo(m)) return false;               // its only version was taken over
-  if (m.devices && !m.devices.includes(dev().id)) return false;
-  // models newer than the unit's 3.80 firmware (HX Edit knows them; the unit doesn't)
-  return !fwTable() || !!(fwName(m, false) || fwName(m, true));
-}
-const isAmp = m => m.category === 1 || m.category === 13;
-// A custom effect's knob reaches the unit through a .hlx only where its host has a parameter with the same slot id
-// and type (HX Edit only knows the host); the rest keep the unit's defaults and are set on the unit.
-function hostParamFor(m, p) {
-  if (!isCustom(m) || !p.slot) return null;
-  const hp = m.fw.hostParams.find(h => h.slot === p.slot && h.valueType === p.valueType);
-  if (!hp) return null;
-  const def = byId[m.fw.host].params.find(q => q.symbolicID === hp.name);
-  if (!def) return null;
-  if (p.valueType !== 2 && (p.min < def.min || p.max > def.max)) return null;   // HX Edit would clamp it
-  return def;
-}
-const hasParam = (m, sym) => m.params.some(p => p.symbolicID === sym);
+const canMono = m => m.mono === true;
+const available = m => !!m;               // the browser lists only the chosen build's models
+const isAmp = m => !!(m && m.amp);
 
-// Block @type rule taken from HX Edit's BlockTypeFromCategory()
-function blockType(m) {
-  if (isCustom(m)) return blockType(byId[m.fw.host]);
-  if (m.category === 1 || m.category === 13) return 1;   // amp (no linked cab) / preamp
-  if (m.category === 2 || m.category === 19) return 2;   // single cab
-  if (m.category === 15) return 6;                       // looper
-  if (m.category === 16) return 5;                       // impulse response
-  return hasParam(m, "@trails") ? 7 : 0;                 // delay/reverb-style blocks with trails
-}
 function blockLoad(b) {
   const m = byId[b.model];
   const v = b.stereo ? (m.loadStereo ?? m.load) : (m.load ?? m.loadStereo);
@@ -369,52 +529,39 @@ const SOURCE_NUM = { exp1: 1, exp2: 2, fs1: 3, fs2: 4, fs3: 5, fs4: 6, fs5: 7, f
 function fwKnobIndex(b, p) {
   const t = fwTable(), m = byId[b.model], name = t && fwName(m, b.stereo);
   if (!name) return null;
-  const i = t[name][2].findIndex((pp, i) => pageKnob(m, pp[0], i) === p);
+  const i = t[name][2].findIndex(pp => pageKnob(m, pp[0]) === p);
   return i < 0 ? null : i;
 }
 
-// ---------- value formatting (from HelixControls.json) ----------
-function control(p) {
-  let c = HX.controls[p.displayType], guard = 0;
-  while (c && c.alias && guard++ < 5) c = HX.controls[c.alias] || null;
-  return c || null;
-}
-function printf(fmt, n) {
-  return String(fmt)
-    .replace(/%(\+?)(?:\.(\d+))?([fd])/g, (_, plus, dec, kind) => {
-      const s = kind === "d" ? String(Math.round(n)) : n.toFixed(dec != null ? +dec : 6);
-      return (plus && n >= 0 ? "+" : "") + s;
-    })
-    .replace(/%%/g, "%");
-}
-function enumLabels(p) {
-  if (p.labels) return null;
-  const c = control(p);
-  if (c && c.isDiscrete && Array.isArray(c.format) && typeof c.format[0] === "string") return c.format;
-  return null;
-}
+// ---------- value formatting (by the firmware's display types) ----------
+const fix = (x, d) => (+x).toFixed(d);
 function formatValue(p, v) {
-  if (p.labels) return p.labels[String(p.valueType === 2 ? +!!v : v)] ?? String(v);
-  if (p.valueType === 2) { const l = enumLabels(p); return l ? (l[v ? 1 : 0] ?? (v ? "On" : "Off")) : (v ? "On" : "Off"); }
-  const c = control(p);
-  const labels = enumLabels(p);
-  if (labels) return labels[v - p.min] ?? String(v);
-  if (!c) return p.valueType === 0 ? String(v) : (+v).toFixed(2);
-  if (c.dspToDisplayIntegerOffset != null) return String(v + c.dspToDisplayIntegerOffset);
-  let d = v * (c.dspToDisplayScale ?? 1);
-  if (c.minimumValue != null && c.maximumValue != null && p.max !== p.min) {
-    d = c.minimumValue + (v - p.min) / (p.max - p.min) * (c.maximumValue - c.minimumValue);
+  if (p.valueType === 2) return p.labels ? (p.labels[v ? 1 : 0] ?? (v ? "On" : "Off")) : (v ? "On" : "Off");
+  if (p.labels && p.labels[String(Math.round(v))] != null) return p.labels[String(Math.round(v))];
+  if (p.minString && v <= p.min) return p.minString;
+  if (p.maxString && v >= p.max) return p.maxString;
+  if (p.midString && Math.abs(v - (p.min + p.max) / 2) < (p.max - p.min) / 400) return p.midString;
+  const unit01 = p.min === 0 && p.max <= 1.0001;
+  const side = (v, a, b) => { const c = (v - 0.5) * 200; return Math.abs(c) < 0.5 ? "Center" : (c < 0 ? `${a} ${fix(-c, 0)}` : `${b} ${fix(c, 0)}`); };
+  switch (p.displayType) {
+    case "knob": return unit01 ? fix(v * 10, 1) : fix(v, 1);
+    case "percent": return (unit01 ? fix(v * 100, 0) : fix(v, 0)) + "%";
+    case "db": case "volume": return `${v > 0 ? "+" : ""}${fix(v, 1)} dB`;
+    case "hz": return v >= 1000 ? `${fix(v / 1000, v >= 10000 ? 1 : 2)} kHz` : `${fix(v, v < 100 ? 1 : 0)} Hz`;
+    case "time": case "rt60": return v < 1 ? `${fix(v * 1000, 0)} ms` : `${fix(v, v < 10 ? 2 : 1)} s`;
+    case "timeAB": return `${v > 0 ? "+" : ""}${fix(v * 1000, 1)} ms`;
+    case "pan": case "blend": return side(v, "Left", "Right");
+    case "abpan": return side(v, "A", "B");
+    case "inches": return `${fix(v, 1)} in`;
+    case "micAngle": return `${fix(v, 0)}°`;
+    case "micPosition": return fix(v * 10, 1);
+    case "tenths": return fix(v, 1);
+    case "ratio": return `${fix(v, 1)}:1`;
+    case "stepsAndCents": return `${v > 0 ? "+" : ""}${fix(v, 1)}`;
   }
-  let fmt = c.formatUnits || c.format;
-  if (Array.isArray(fmt)) {
-    const e = fmt.find(f => d >= f.lowerBound && d < f.upperBound) || fmt[fmt.length - 1];
-    if (!e || typeof e !== "object") return p.valueType === 0 ? String(v) : d.toFixed(2);
-    d *= e.unitsMultiplier ?? 1;
-    fmt = e.formatUnits || e.format;
-  }
-  if (!fmt) return p.valueType === 0 ? String(Math.round(d)) : d.toFixed(2);
-  return printf(fmt, d);
+  return p.valueType === 0 ? String(Math.round(v)) : unit01 ? fix(v * 10, 1) : fix(v, 2);
 }
+const fromCentre = p => ["pan", "blend", "abpan"].includes(p.displayType);
 
 // ---------- rendering ----------
 const el = (tag, attrs = {}, ...kids) => {
@@ -491,7 +638,7 @@ function renderHeader() {
     el("div", { class: "btn-group" },
       el("button", { class: "btn", onclick: () => fileInput.click(), title: "A file from Save file, or an .hlx from HX Edit" }, "Open"),
       el("button", { class: "btn", onclick: saveFile, title: "Everything on the page: both paths, snapshots, controllers" }, "Save"),
-      el("button", { class: "btn", onclick: exportHlx, title: "For HX Edit (no snapshots or controllers)" }, "Export .hlx"),
+      el("button", { class: "btn", onclick: exportHlx, title: "An HX Edit preset file (blocks and their settings; no snapshots or controllers)" }, "Export .hlx"),
       el("button", { class: "btn danger", onclick: clearAll }, "Clear")),
     el("button", { class: "btn", onclick: () => unitDialog("read") }, "Read from unit"),
     el("button", { class: "btn primary", onclick: () => unitDialog("send") }, "Send to unit"));
@@ -630,9 +777,9 @@ function renderSlot(b, r, s) {
 
 function renderBrowser() {
   const q = ui.query.trim().toLowerCase();
-  const list = HX.models.filter(m => available(m) && (q ? (m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)) : m.group === ui.group));
+  const list = MODELS.filter(m => available(m) && (q ? (m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)) : m.group === ui.group));
   list.sort((a, b) => q ? (GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || a.name.localeCompare(b.name)) : a.name.localeCompare(b.name));
-  const groups = GROUPS.filter(g => HX.models.some(m => m.group === g && available(m)));
+  const groups = GROUPS.filter(g => MODELS.some(m => m.group === g && available(m)));
   const where = `${state.sel.row ? "path B" : "path A"} slot ${state.sel.slot + 1}`;
   return el("aside", { class: "panel sidebar", "aria-label": "Model browser" },
     el("h2", {}, "Models"),
@@ -646,7 +793,8 @@ function renderBrowser() {
           title: why || `Put ${m.name} in ${where}`, "aria-disabled": why ? "true" : null, onclick: () => placeModel(m) },
           el("span", {}, m.name + (m.fw && m.fw.build ? " ★" : "")), el("span", { class: "mg" }, q ? m.group : ((m.load ?? m.loadStereo ?? 0).toFixed(1) + "%"))); })
         : el("div", { class: "empty-note" }, "No models match.")),
-    el("div", { class: "meta side-foot" }, `Click a model to put it in ${where}. ★ added by this repo's firmware.`));
+    el("div", { class: "meta side-foot" }, `Click a model to put it in ${where}. ★ added by this repo's firmware. Models read from your firmware file (`,
+      el("a", { href: "#", onclick: e => { e.preventDefault(); forgetFirmware(); } }, "read it again"), ")."));
 }
 
 function renderFlowEditor(kind) {
@@ -690,9 +838,6 @@ function renderEditor() {
   if (canStereo(m) && canMono(m)) {
     head.append(el("button", { class: "pill", "aria-pressed": b.stereo ? "true" : "false",
       onclick: () => setStereo(b, !b.stereo) }, b.stereo ? "Stereo" : "Mono"));
-  }
-  if (m.cablink && byId[m.cablink] && available(byId[m.cablink])) {
-    head.append(el("button", { class: "btn small", onclick: () => addMatchingCab(row, slot) }, `Add cab: ${byId[m.cablink].name}`));
   }
   head.append(
     el("button", { class: "btn small", title: "Back to the model's defaults", onclick: () => { state.rows[row][slot] = { ...newBlock(m), enabled: b.enabled, stereo: b.stereo, fs: b.fs, snap: b.snap, snapBypass: b.snapBypass, midiCC: b.midiCC }; render(); } }, "Reset"),
@@ -739,7 +884,7 @@ function renderKnob(b, p, id, max, onValue) {
   s.innerHTML = '<path class="track"/><path class="arc"/><circle class="cap" cx="32" cy="32" r="19"/><line class="ptr"/>';
   const [track, arcP, , ptr] = s.children;
   const draw = v => {
-    const g = knobGeom(Math.min(1, Math.max(0, (v - p.min) / span)), p.displayType === "pan" || p.displayType === "split_balance");
+    const g = knobGeom(Math.min(1, Math.max(0, (v - p.min) / span)), fromCentre(p));
     track.setAttribute("d", g.track); arcP.setAttribute("d", g.value);
     ptr.setAttribute("x1", g.ptr[0]); ptr.setAttribute("y1", g.ptr[1]); ptr.setAttribute("x2", g.ptr[2]); ptr.setAttribute("y2", g.ptr[3]);
     s.setAttribute("aria-valuenow", v); s.setAttribute("aria-valuetext", formatValue(p, v));
@@ -778,7 +923,7 @@ function renderParam(b, p) {
   const v = b.values[p.symbolicID] ?? paramDefault(p, b.stereo);
   const lbl = el("label", { class: "lbl", for: id, title: p.name }, p.name);
   const cell = (...kids) => el("div", { class: "param" }, lbl, ...kids, renderCtl(b, p, id));
-  if (p.displayType === "ir_select") {
+  if (p.displayType === "dynamicList") {
     const irs = ui.irs;
     const name = n => irs ? (irs[n] ? `${n}  ${irs[n]}` : `${n}  (empty)`) : `IR ${n}`;
     return cell(
@@ -788,19 +933,15 @@ function renderParam(b, p) {
         onclick: () => loadIrList() }, irs ? "Refresh IR names" : "Get IR names from unit"),
       irs && !irs[v] ? el("span", { class: "meta warn-text" }, "No IR in this slot on the unit") : null);
   }
-  if (p.labels && p.valueType !== 2) {
-    return cell(el("select", { id, onchange: e => { putValue(b, p.symbolicID, +e.target.value); render(); } },
-      Object.entries(p.labels).map(([k, l]) => el("option", { value: k, selected: +k === v }, l))));
-  }
   if (p.valueType === 2) {
     return cell(el("button", { class: "switch", id, "aria-pressed": v ? "true" : "false",
       onclick: () => { putValue(b, p.symbolicID, !v); render(); } }, formatValue(p, v)));
   }
-  const labels = enumLabels(p);
   const max = paramMax(p, b.stereo);
-  if (labels && p.valueType === 0 && labels.length >= max - p.min + 1) {
+  // whole numbers with named choices (and short lists): a menu over the whole range, the name where there is one
+  if (p.valueType === 0 && (p.labels || p.displayType === "list") && max - p.min < 200) {
     return cell(el("select", { id, onchange: e => { putValue(b, p.symbolicID, +e.target.value); render(); } },
-      Array.from({ length: max - p.min + 1 }, (_, i) => el("option", { value: p.min + i, selected: p.min + i === v }, labels[i]))));
+      Array.from({ length: max - p.min + 1 }, (_, i) => el("option", { value: p.min + i, selected: p.min + i === v }, formatValue(p, p.min + i)))));
   }
   const val = el("span", { class: "val" }, formatValue(p, v));
   return cell(renderKnob(b, p, id, max, nv => { val.textContent = formatValue(p, nv); }), val);
@@ -868,13 +1009,16 @@ function placeModel(m) {
   render();
 }
 function setBuild(key) {
+  if (!FWCAT[key]) return;
   state.build = key;
+  setModels(key);
   const before = state.rows.flat().filter(Boolean).length;
   state.rows = state.rows.map(r => r.map(b => {
     if (!b) return null;
     const m = byId[b.model];
-    if (!available(m)) return null;
+    if (!m) return null;
     if (!b.stereo && !canMono(m)) return null;      // its mono version is a custom effect in this build
+    if (b.stereo && !canStereo(m)) return null;
     return b;
   }));
   const lost = before - state.rows.flat().filter(Boolean).length;
@@ -926,68 +1070,65 @@ function setStereo(b, stereo) {
   }
   render();
 }
-function addMatchingCab(row, slot) {
-  const cab = byId[byId[state.rows[row][slot].model].cablink];
-  const free = state.rows[row].findIndex((b, i) => i > slot && !b);
-  if (free < 0) { toast("No empty slot after this amp for the cab."); return; }
-  const why = fitProblem(newBlock(cab), row, free);
-  if (why) { toast(why); return; }
-  changePathB(() => { state.rows[row][free] = newBlock(cab); });
-  state.sel = { row, slot: free };
-  render();
-}
 function clearAll() {
   if (!state.rows.flat().some(Boolean) || confirm("Clear all blocks?")) {
     state.rows = emptyRows(dev().rows); state.split = 1; state.merge = 10; state.snaps = defaultSnaps(); state.splitBlock = defaultFlow("split"); state.mergeBlock = defaultFlow("merge"); state.sel = { row: 0, slot: 0 }; render();
   }
 }
 
-// ---------- .hlx export / import ----------
-function buildHlx() {
-  const d = dev();
-  const t = structuredClone(HX.templates[d.template]);
-  t.data.meta.name = (state.name || "New Preset").slice(0, 16);
-  t.data.meta.modifieddate = Math.floor(Date.now() / 1000);
-  t.data.device = d.id;
-  const dsp = t.data.tone.dsp0;
-  let n = 0;
-  if (state.rows[1].some(Boolean)) { dsp.split["@position"] = state.split - 1; dsp.join["@position"] = state.merge - 2; }
-  for (const [kind, node] of [["split", dsp.split], ["merge", dsp.join]]) Object.assign(node, state[kind + "Block"].values);
-  state.rows.forEach((row, r) => {
-    row.forEach((b, pos) => {
-      if (!b) return;
-      const m = byId[b.model];
-      if (isCustom(m)) { dsp["block" + n++] = customBlock(b, m, pos, r); return; }
-      const o = { "@model": m.id, "@position": pos, "@path": r, "@type": blockType(m), "@enabled": !!b.enabled, "@no_snapshot_bypass": b.snapBypass === false };
-      for (const p of m.params) {
-        const k = p.symbolicID;
-        if (k === "@enabled") continue;
-        if (k === "@stereo") { o[k] = !!b.stereo; continue; }
-        let v = b.values[k] ?? paramDefault(p, b.stereo);
-        if (p.valueType === 0) v = Math.round(v);
-        o[k] = v;
-      }
-      dsp["block" + n++] = o;
-    });
-  });
-  return t;
+// ---------- .hlx export / import (HX Edit's preset files) ----------
+// The file's frame, written here: HX Edit's preset format for the HX Effects (device 2162693), one DSP. Blocks carry
+// the firmware's model names (without Mono/Stereo, which @stereo gives) and knob names, which are HX Edit's too.
+const HLX_DEVICE = 2162693;
+function hlxFrame(name) {
+  const snap = k => ({ "@name": state.snaps.names[k] || `SNAPSHOT ${k + 1}`, "@tempo": 120, "@pedalstate": 0, "@ledcolor": 0 });
+  return { version: 6, schema: "L6Preset", data: {
+    meta: { name: name.slice(0, 16), application: "Helix Edit", build_sha: "050fc4a", modifieddate: Math.floor(Date.now() / 1000), appversion: 327680 },
+    device: HLX_DEVICE, device_version: 37814625,
+    tone: {
+      dsp0: {
+        inputA: { "@model": "HelixFx_AppDSPFlowInput", "@input": 1 }, inputB: { "@model": "HelixFx_AppDSPFlowInput", "@input": 0 },
+        outputA: { "@model": "HelixFx_AppDSPFlowOutput", "@output": 1, pan: 0.5, gain: 0 },
+        outputB: { "@model": "HelixFx_AppDSPFlowOutput", "@output": 0, pan: 0.5, gain: 0 },
+        split: { "@model": "HD2_AppDSPFlowSplitY", "@enabled": true, "@position": 0, bypass: false, ...state.splitBlock.values },
+        join: { "@model": "HD2_AppDSPFlowJoin", "@enabled": true, "@position": 0, ...state.mergeBlock.values },
+      },
+      dsp1: {},
+      global: { "@model": "@global_params", "@topology0": "A", "@topology1": "", "@tempo": 120, "@current_snapshot": state.snaps.cur,
+                "@cursor_dsp": 0, "@cursor_path": 0, "@cursor_position": 0, "@cursor_group": "", "@pedalstate": 0, "@guitarinputZ": 0,
+                "@variax_model": 0, "@variax_magmode": false, "@variax_lockctrls": 0, "@variax_customtuning": true,
+                "@variax_volumeknob": -0.1, "@variax_toneknob": -0.1, "@variax_str1tuning": 0, "@variax_str2tuning": 0,
+                "@variax_str3tuning": 0, "@variax_str4tuning": 0, "@variax_str5tuning": 0, "@variax_str6tuning": 0 },
+      snapshot0: snap(0), snapshot1: snap(1), snapshot2: snap(2), snapshot3: snap(3),
+    } } };
 }
-// A custom effect is written as the mono stock block it replaces: the host's parameters, each taking the value of the
-// effect's knob with the same slot id and type where there is one, else the host's default.
-function customBlock(b, m, pos, path) {
-  const host = byId[m.fw.host];
-  const o = { "@model": host.id, "@position": pos, "@path": path, "@type": blockType(m), "@enabled": !!b.enabled, "@no_snapshot_bypass": b.snapBypass === false };
-  for (const hp of host.params) {
-    const k = hp.symbolicID;
-    if (k === "@enabled" || hp["stereo-only"]) continue;
-    if (k === "@stereo") { o[k] = false; continue; }
-    const knob = m.params.find(p => hostParamFor(m, p) === hp);
-    let v = knob ? (b.values[knob.symbolicID] ?? knob.default) : paramDefault(hp, false);
-    if (hp.valueType === 0) v = Math.round(v);
-    if (hp.valueType === 2) v = !!v;
-    o[k] = v;
-  }
-  return o;
+const hlxBase = n => n.replace(/(Mono|Stereo)(V\d+)?$/, "$2");
+// HX Edit's block kind (its BlockTypeFromCategory): amp/preamp 1, IR 5, looper 6, delay/reverb with trails 7, else 0
+function hlxType(m) {
+  if (m.amp) return 1;
+  if (m.group === "IR") return 5;
+  if (m.group === "Looper") return 6;
+  return m.params.some(p => p.symbolicID === "@trails" || p.symbolicID === "DryThru" || p.symbolicID === "Trails") ? 7 : 0;
+}
+function buildHlx() {
+  const t = hlxFrame(state.name || "New Preset"), dsp = t.data.tone.dsp0;
+  if (state.rows[1].some(Boolean)) { dsp.split["@position"] = state.split - 1; dsp.join["@position"] = state.merge - 2; }
+  let n = 0;
+  state.rows.forEach((row, r) => row.forEach((b, pos) => {
+    if (!b) return;
+    const m = byId[b.model], name = fwName(m, b.stereo);
+    const o = { "@model": hlxBase(name), "@position": pos, "@path": r, "@type": hlxType(m), "@enabled": !!b.enabled,
+                "@no_snapshot_bypass": b.snapBypass === false, "@stereo": !!b.stereo };
+    for (const p of m.params) {
+      if (p["stereo-only"] && !b.stereo) continue;
+      let v = b.values[p.symbolicID] ?? paramDefault(p, b.stereo);
+      if (p.valueType === 0) v = Math.round(v);
+      if (p.symbolicID === "DryThru" || p.symbolicID === "Trails") o["@trails"] = !!v;
+      o[p.symbolicID] = v;
+    }
+    dsp["block" + n++] = o;
+  }));
+  return t;
 }
 function exportHlx() {
   if (!state.rows.flat().some(Boolean)) { toast("Add at least one block first."); return; }
@@ -996,7 +1137,54 @@ function exportHlx() {
     download: (state.name.trim() || "preset").replace(/[^\w\- ]+/g, "_") + ".hlx" });
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast("Exported. Import it in HX Edit to load it onto your device.");
+  toast("Exported as .hlx.");
+}
+function importHlx(j, fileName) {
+  const otherDevice = j.data.device !== HLX_DEVICE;
+  state.name = (j.data.meta && j.data.meta.name) || fileName.replace(/\.hlx$/i, "");
+  state.rows = emptyRows(2);
+  state.snaps = defaultSnaps();
+  const tone = j.data.tone, dsp = tone.dsp0 || {};
+  for (let k = 0; k < NSNAP; k++) if (tone["snapshot" + k] && tone["snapshot" + k]["@name"]) state.snaps.names[k] = String(tone["snapshot" + k]["@name"]).slice(0, 10);
+  if (dsp.split && dsp.join) {
+    state.split = Math.min(SLOTS, Math.max(1, (dsp.split["@position"] ?? 0) + 1));
+    state.merge = Math.min(SLOTS + 1, Math.max(state.split + 1, (dsp.join["@position"] ?? SLOTS - 1) + 2));
+  }
+  for (const [kind, node] of [["split", dsp.split], ["merge", dsp.join]]) {
+    const fb = defaultFlow(kind);
+    if (node) for (const p of FLOW_PARAMS[kind]) if (p.symbolicID in node) fb.values[p.symbolicID] = node[p.symbolicID];
+    state[kind + "Block"] = fb;
+  }
+  let skipped = 0, unknown = 0;
+  const blocks = Object.entries(dsp).filter(([k]) => /^block\d+$/.test(k)).map(([, b]) => b)
+    .sort((a, b) => (a["@position"] ?? 0) - (b["@position"] ?? 0));
+  for (const blk of blocks) {
+    const id = String(blk["@model"] || ""), stereo = !!blk["@stereo"], ms = stereo ? "Stereo" : "Mono";
+    const fname = [id + ms, id.replace(/(V\d+)$/, ms + "$1"), id].find(c => byFw[c]);
+    const m = fname && byFw[fname];
+    if (!m) { unknown++; continue; }
+    const row = state.rows[blk["@path"] || 0], pos = blk["@position"];
+    if (!row || !(pos >= 0 && pos < SLOTS) || row[pos]) { skipped++; continue; }
+    const b = newBlock(m);
+    b.stereo = m.fwNames.stereo === fname;
+    b.enabled = blk["@enabled"] !== false;
+    b.snap = Array(NSNAP).fill(b.enabled);
+    if (blk["@no_snapshot_bypass"] === true) b.snapBypass = false;
+    for (const [k, v] of Object.entries(blk)) {
+      if (k.startsWith("@") && k !== "@trails") continue;
+      const p = m.params.find(q => q.symbolicID === k) || m.params.find(q => normKnob(q.symbolicID) === normKnob(k))
+        || (k === "@trails" && m.params.find(q => q.symbolicID === "DryThru" || q.symbolicID === "Trails"));
+      if (p) b.values[p.symbolicID] = p.valueType === 2 ? !!v : p.valueType === 0 ? Math.round(v) : +v;
+    }
+    row[pos] = b;
+  }
+  state.sel = { row: 0, slot: 0 };
+  render();
+  const notes = [];
+  if (otherDevice) notes.push("preset is from another device");
+  if (skipped) notes.push(`${skipped} block${skipped > 1 ? "s" : ""} without room skipped`);
+  if (unknown) notes.push(`${unknown} block${unknown > 1 ? "s" : ""} not in the ${BUILDS[state.build]} skipped`);
+  toast(notes.length ? `Imported with notes: ${notes.join("; ")}.` : "Imported.");
 }
 function saveFile() {
   const json = JSON.stringify({ format: FILE_FORMAT, version: 1, state: { ...state, sel: undefined } }, null, 1);
@@ -1013,86 +1201,22 @@ async function importFile(file) {
     if (adoptState(j.state)) { render(); toast(`Opened ${state.name}.`); } else toast("That file's preset can't be read.");
     return;
   }
-  if (!j || !j.data || !j.data.tone) { toast("That doesn't look like a Helix .hlx preset."); return; }
-  const otherDevice = j.data.device !== DEVICES.hfx.id;
-  state.device = "hfx";
-  state.name = (j.data.meta && j.data.meta.name) || file.name.replace(/\.hlx$/i, "");
-  state.rows = emptyRows(2);
-  state.snaps = defaultSnaps();
-  const dsp = j.data.tone.dsp0 || {};
-  if (dsp.split && dsp.join) {
-    state.split = Math.min(SLOTS, Math.max(1, (dsp.split["@position"] ?? 0) + 1));
-    state.merge = Math.min(SLOTS + 1, Math.max(state.split + 1, (dsp.join["@position"] ?? SLOTS - 1) + 2));
-  }
-  for (const [kind, node] of [["split", dsp.split], ["merge", dsp.join]]) {
-    const fb = defaultFlow(kind);
-    if (node) for (const p of FLOW_PARAMS[kind]) if (p.symbolicID in node) fb.values[p.symbolicID] = node[p.symbolicID];
-    state[kind + "Block"] = fb;
-  }
-  let skipped = 0, unknown = 0;
-  {
-    const blocks = Object.entries(dsp).filter(([k]) => /^block\d+$/.test(k)).map(([, b]) => b)
-      .sort((a, b) => (a["@position"] ?? 0) - (b["@position"] ?? 0));
-    for (const blk of blocks) {
-      let m = byId[blk["@model"]];
-      const pos = blk["@position"];
-      // a mono host block is the custom effect that replaces it in the chosen build
-      const takenBy = m && !blk["@stereo"] && monoTaken(m) ? byId[m.fw.monoTakenBy.id] : null;
-      if (takenBy) m = takenBy;
-      if (!m || !available(m)) { unknown++; continue; }
-      const row = state.rows[blk["@path"] || 0];
-      if (!row || !(pos >= 0 && pos < SLOTS) || row[pos]) { skipped++; continue; }
-      const b = newBlock(m);
-      b.enabled = blk["@enabled"] !== false;
-      b.stereo = canStereo(m) ? (!!blk["@stereo"] || !canMono(m)) : false;
-      if (takenBy) {
-        for (const p of m.params) { const hp = hostParamFor(m, p); if (hp && hp.symbolicID in blk) b.values[p.symbolicID] = blk[hp.symbolicID]; }
-      } else {
-        for (const p of m.params) if (p.symbolicID in blk && p.symbolicID !== "@enabled" && p.symbolicID !== "@stereo") b.values[p.symbolicID] = blk[p.symbolicID];
-      }
-      row[pos] = b;
-    }
-  }
-  state.sel = { row: 0, slot: 0 };
-  render();
-  const notes = [];
-  if (otherDevice) notes.push("preset is from another device");
-  if (skipped) notes.push(`${skipped} block${skipped > 1 ? "s" : ""} without room skipped`);
-  if (unknown) notes.push(`${unknown} block${unknown > 1 ? "s" : ""} not in the ${BUILDS[state.build]} skipped`);
-  toast(notes.length ? `Imported with notes: ${notes.join("; ")}.` : "Imported.");
+  if (j && j.data && j.data.tone) { importHlx(j, file.name); return; }
+  toast("That isn't a file this page saved, or a Helix .hlx preset.");
 }
 
 // ---------- sending to / reading from the unit (preset-core.js, web/flasher.js) ----------
-// The page's blocks become a preset the unit stores directly: every knob, custom effects' own knobs included (no .hlx,
-// no HX Edit). fw-models.js holds each build's firmware model table (extract_fw_tables.py).
-const FW = window.FW_MODELS;
-const fwTable = () => FW && FW.builds[state.build];
-function fwName(m, stereo) {
-  const t = fwTable();
-  if (!t) return null;
-  if (isCustom(m)) return t[m.fw.hostSymbol] ? m.fw.hostSymbol : null;
-  const ms = stereo ? "Stereo" : "Mono";
-  // the firmware puts Mono/Stereo before a version suffix: HD2_DelayVintageDigitalV2 -> HD2_DelayVintageDigitalMonoV2
-  for (const c of [m.id + ms, m.id.replace(/(V\d+)$/, ms + "$1"), m.id]) if (t[c]) return c;
-  return null;
-}
-// HX Edit's knob names vs the firmware's: Gate_Range / Gate Range, Index_1 / Index.1, WowFluttr / WowFlutter
-const normKnob = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
-const subseq = (a, b) => { let i = 0; for (const c of b) if (c === a[i]) i++; return i === a.length; };   // a in b, in order
-function pageKnob(m, fwKnob, i) {
-  if (isCustom(m)) return m.params.find(q => q.slot === i + 1);
-  if (fwKnob === "DryThru" || fwKnob === "Trails") return m.params.find(q => q.symbolicID === "@trails");
-  const n = normKnob(fwKnob), ps = m.params.filter(q => !q.symbolicID.startsWith("@"));
-  return ps.find(q => q.symbolicID === fwKnob) || ps.find(q => normKnob(q.symbolicID) === n)
-    || ps.find(q => normKnob(q.symbolicID).length >= 5 && subseq(normKnob(q.symbolicID), n));
-}
-// a block's knob values in the firmware's order (a custom effect's knob "slotN" is position N-1), Trails last
+// The page's blocks become a preset the unit stores directly: every knob, custom effects' own knobs included.
+// FWT (from the firmware, above) holds each build's model table in the form preset-core.js takes.
+const fwName = (m, stereo) => (m && m.fwNames[stereo ? "stereo" : "mono"]) || null;
+const pageKnob = (m, fwKnob) => m.params.find(q => q.symbolicID === fwKnob);
+// a block's knob values in the firmware's order, Trails last
 function fwValues(m, b, fwm) {
   const params = fwm[2];
   const vals = params.map((pp, i) => {
-    const p = pageKnob(m, pp[0], i);
+    const p = pageKnob(m, pp[0]);
     const v = p ? (b.values[p.symbolicID] ?? paramDefault(p, b.stereo)) : null;
-    return v ?? pp[2];
+    return v ?? (typeof pp[2] === "number" && Number.isNaN(pp[2]) ? 0 : pp[2]);
   });
   const last = params[params.length - 1];
   const ownTrails = last && last[1] === 1 && (last[0] === "DryThru" || last[0] === "Trails");
@@ -1104,7 +1228,7 @@ function buildSpec() {
   state.rows.forEach((row, r) => row.forEach((b, s) => {
     if (!b) return;
     const m = byId[b.model], name = fwName(m, b.stereo);
-    if (!name) { problems.push(`${m.name} (${r ? "path B" : "path A"} slot ${s + 1}) isn't on the unit's 3.80 firmware`); return; }
+    if (!name) { problems.push(`${m ? m.name : b.model} (${r ? "path B" : "path A"} slot ${s + 1}) isn't in the ${BUILDS[state.build]}`); return; }
     const fwm = fwTable()[name];
     const blk = { pos: (r ? 12 : 1) + s, model: name, values: fwValues(m, b, fwm), on: !!b.enabled };
     if (b.fs) { blk.footswitch = b.fs; blk.label = m.name.slice(0, 16); }
@@ -1139,16 +1263,14 @@ function loadFromBlob(blob) {
     if (!r && (pos < 1 || pos > SLOTS)) { skipped++; return; }
     const d = blk[20], name = byPid[d[24][25]];
     if (!name) { unknown++; return; }
-    let m = HX.models.find(x => isCustom(x) && x.fw.hostSymbol === name && available(x));
-    const stereo = !m && /Stereo$/.test(name);
-    m ||= byId[name.replace(/(Mono|Stereo)$/, "")] || byId[name.replace(/(Mono|Stereo)(V\d+)$/, "$2")] || byId[name];
-    if (!m || !available(m)) { unknown++; return; }
+    const m = byFw[name], stereo = !!m && m.fwNames.stereo === name;
+    if (!m) { unknown++; return; }
     const b = newBlock(m);
-    b.stereo = canStereo(m) ? (stereo || !canMono(m)) : false;
+    b.stereo = stereo;
     b.enabled = !!d[10];
     const vals = d[11][4], params = t[name][2];
     params.forEach((pp, i) => {
-      const p = pageKnob(m, pp[0], i);
+      const p = pageKnob(m, pp[0]);
       if (p && i < vals.length) b.values[p.symbolicID] = typeof vals[i] === "boolean" ? vals[i] : (p.valueType === 0 ? Math.round(vals[i]) : vals[i]);
     });
     if (vals.length > params.length && "@trails" in b.values) b.values["@trails"] = !!vals[params.length];
@@ -1166,7 +1288,7 @@ function loadFromBlob(blob) {
     if (!at || !srcName[src]) return;
     const { b, m, params } = at;
     if (src === 9 && c[4] === 2) { b.midiCC = c[1]; return; }
-    const ki = c[6] && c[6][29], p = ki != null && params[ki] && pageKnob(m, params[ki][0], ki);
+    const ki = c[6] && c[6][29], p = ki != null && params[ki] && pageKnob(m, params[ki][0]);
     if (!p) return;
     const conv = x => typeof x === "boolean" ? x : (p.valueType === 0 ? Math.round(x) : x);
     b.ctl ||= {};
@@ -1195,6 +1317,9 @@ function loadFromBlob(blob) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// what to do when the unit's USB connection stops answering (it can stay stuck until the cable is reconnected)
+const usbHint = e => /connect message|no reply|stopped acknowledging/.test(e.message)
+  ? " The unit's USB connection is stuck: unplug the USB cable and plug it back in (or switch the unit off and on), then try again." : "";
 // The names of the IRs on the unit, for the IR blocks' slot choice: {slot: name}, empty slots left out
 function keepIrList(list) {
   ui.irs = {};
@@ -1207,12 +1332,12 @@ async function loadIrList() {
     keepIrList(await FLASHER.irSession({ usb: navigator.usb, log: () => {} }, api => api.list()));
     render();
     toast(`${Object.keys(ui.irs).length} IRs on the unit.`);
-  } catch (e) { toast("Could not reach the unit: " + e.message + " (quit HX Edit first)"); }
+  } catch (e) { toast("Could not reach the unit: " + e.message + (usbHint(e) || " (quit HX Edit first)")); }
 }
 const slotLabel = n => `${Math.floor(n / 4) + 1}${"ABCD"[n % 4]}`;
 async function unitDialog(mode) {
   if (!navigator.usb) { toast("Sending needs Chrome or Edge (WebUSB)."); return; }
-  if (!FW || !FW.builds[state.build]) { toast(`No firmware table for the ${BUILDS[state.build]}: run extract_fw_tables.py.`); return; }
+  if (!fwTable()) { toast(`No model table for the ${BUILDS[state.build]}.`); return; }
   let spec = null;
   if (mode === "send") {
     const r = buildSpec();
@@ -1243,7 +1368,7 @@ async function unitDialog(mode) {
   let list;
   try {
     list = await session(api => api.presetList());
-  } catch (e) { say("Could not reach the unit: " + e.message); return; }
+  } catch (e) { say("Could not reach the unit: " + e.message + usbHint(e)); return; }
   sel.replaceChildren(...list.map(p => el("option", { value: p.index }, `${slotLabel(p.index)}  ${p.name}`)));
   sel.disabled = false; go.disabled = false;
   if (mode === "send") { const free = list.find(p => p.name === "New Preset"); if (free) sel.value = free.index; }
@@ -1266,8 +1391,9 @@ async function unitDialog(mode) {
       }
       if (target.name !== "New Preset" && !confirm(`Replace ${slotLabel(n)} "${target.name}" on the unit?`)) { go.disabled = false; sel.disabled = false; return; }
       await session(async api => {
+        const isPreset = b => b && b.length > 10 && String.fromCharCode(...b.slice(1, 9)) === "l6-helix";
         let base = await api.presetRead(n);
-        if (!base) base = await api.presetRead(0);             // an empty slot: build on 1A's settings
+        if (!isPreset(base)) base = await api.presetRead(0);   // an empty (or damaged) slot: build on 1A's settings
         let irs = {};
         if (spec.blocks.some(b => fwTable()[b.model][1] === 19)) {
           const l = await api.list();
@@ -1276,15 +1402,23 @@ async function unitDialog(mode) {
         }
         const blob = PRESET.build(base, spec, fwTable(), irs);
         say(`Built ${blob.length} bytes; writing ${slotLabel(n)}…`);
-        await api.presetWrite(n, blob, spec.name, sleep);
-        const back = await api.presetRead(n);
-        const same = back && back.length === blob.length && back.every((x, i) => x === blob[i]);
-        say(same ? "Written and read back: identical." : "Written, but it reads back differently: check it before playing.");
-        if (same && loadAfter.checked) { await api.presetLoad(n); say(`Loaded ${slotLabel(n)} on the unit.`); }
+        // The unit now and then stores a write with its start scrambled; writing again has fixed it every time.
+        // A damaged copy is never loaded: a scrambled preset can freeze the unit, also at its next start-up.
+        let same = false;
+        for (let k = 0; k < 3 && !same; k++) {
+          if (k) { say(`It read back differently; writing ${slotLabel(n)} again…`); await sleep(1000); }
+          await api.presetWrite(n, blob, spec.name, sleep);
+          const back = await api.presetRead(n);
+          same = !!back && back.length === blob.length && back.every((x, i) => x === blob[i]);
+        }
+        if (!same) throw new Error(`${slotLabel(n)} still reads back differently after three writes, so it was not loaded. ` +
+                                   "Don't load that slot on the unit; switch the unit off and on, then send again.");
+        say("Written and read back: identical.");
+        if (loadAfter.checked) { await api.presetLoad(n); say(`Loaded ${slotLabel(n)} on the unit.`); }
       });
       toast(`Sent to ${slotLabel(n)}.`);
     } catch (e) {
-      say("Stopped: " + e.message);
+      say("Stopped: " + e.message + usbHint(e));
     }
     go.disabled = false; sel.disabled = false;
   };
@@ -1302,7 +1436,28 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowUp" && row > 0) { e.preventDefault(); state.sel = { row: row - 1, slot }; render(); }
 });
 
-render();
+// ---------- start: the model data from this browser's store, else from the firmware file ----------
+function start() {
+  if (!FWCAT[state.build]) state.build = "full";
+  setModels(state.build);
+  try { adoptState(JSON.parse(localStorage.getItem(STORE_KEY) || "null")); } catch (e) { /* start fresh */ }
+  if (!FWCAT[state.build]) state.build = "full";
+  setModels(state.build);
+  render();
+}
+async function forgetFirmware() {
+  if (!confirm("Forget the models read from the firmware? You'll need to give the page the firmware file again.")) return;
+  await DB.del(CAT_KEY);
+  location.reload();
+}
+(async () => {
+  try {
+    await Promise.all([loadScript(WEB + "flasher.js"), loadScript(WEB + "firmware-core.js")]);
+  } catch (e) { app.textContent = "This page couldn't load its files: " + e.message; return; }
+  let cat = null;
+  try { cat = await DB.get(CAT_KEY); } catch (e) { /* no IndexedDB: read the file each visit */ }
+  if (cat && cat.stock && cat.full) { setCatalog(cat); start(); } else renderLoader();
+})();
 </script>
 </body>
 </html>

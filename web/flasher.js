@@ -617,10 +617,28 @@
     return r.result instanceof Uint8Array ? r.result : null;
   };
   // write a blob into a slot (HX Edit brackets it with 255/254); the caller checks it by reading it back
+  // Wait for the unit's "done" notification for request rid; false if none came in time (it only reaches a client
+  // subscribed for notifications, which the page may not be).
+  Api.prototype.waitDone = async function (rid, ms) {
+    var end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (this.ch.rx.length < 8) { await this.ch.pump(20); continue; }
+      var hd = await this.ch.recv(8, 30), hv = new DataView(hd.buffer, hd.byteOffset, 8);
+      var typ = hv.getUint16(2, true), m = mpDecode(await this.ch.recv(hv.getUint32(4, true), 30));
+      if (typ === 4 && m && m[106] && m[106][102] === rid) return true;
+    }
+    return false;
+  };
   Api.prototype.presetWrite = async function (n, blob, name, sleep) {
     await this.request(255, M());
-    var r;
-    try { r = await this.request(8, M([107, 0], [108, n], [109, utf8z(name)], [123, false], [124, false], [125, 0], [110, blob]), true); }
+    var r, rid;
+    try {
+      rid = this.id;
+      r = await this.request(8, M([107, 0], [108, n], [109, utf8z(name)], [123, false], [124, false], [125, 0], [110, blob]), true);
+      // 1 = "working": the unit stores the file after answering. HX Edit closes (254) only after the done
+      // notification; closing at once left slots with a scrambled start (tools/preset_send.py, 2026-11-22).
+      if (r.status === 1) await this.waitDone(rid, 5000);
+    }
     finally { await this.request(254, M()); }
     if (r.status !== 0 && r.status !== 1) throw fail("refused", "the unit refused to write preset " + n + " (" + r.status + ")");
     await sleep(500);

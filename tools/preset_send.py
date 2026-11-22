@@ -112,14 +112,34 @@ class Api(iu.Api):
             raise flash.FlashError(f'preset {slot_name(n)}: read refused ({st})')
         return bytes(res)
 
+    def wait_done(self, rid, seconds):
+        """Wait for the unit's "done" notification for request rid; False if none came in time (it only reaches
+        a client subscribed for notifications, which these tools may not be)."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if len(self.ch.rx) < 8:
+                self.ch._pump(20)
+                continue
+            mtyp, v = self._msg(30.0)
+            if mtyp == 4 and isinstance(v, dict) and isinstance(v.get(106), dict) and v[106].get(102) == rid:
+                return True
+        return False
+
     def preset_write(self, n, blob, name):
+        if len(name.encode('utf-8')) > 16:
+            raise flash.FlashError(f'preset name {name!r}: at most 16 bytes')
         self.request(255, {})
         try:
+            rid = self.rid
             st, res = self.request(8, {107: SETLIST, 108: n, 109: name.encode('utf-8') + b'\0', 123: False,
                                        124: False, 125: 0, 110: blob}, accept_working=True)
+            # 1 = "working": the unit stores the file after answering. HX Edit sends the closing 254 only after the
+            # done notification (capture 2026-11-21); closing at once left slots with a scrambled start (2026-11-22).
+            if st == 1:
+                self.wait_done(rid, 5.0)
         finally:
             self.request(254, {})
-        if st not in (0, 1):          # 1: "working"; the done notification only reaches a subscribed client
+        if st not in (0, 1):
             raise flash.FlashError(f'preset {slot_name(n)}: write refused ({st}, {res})')
         time.sleep(0.5)
 
@@ -582,9 +602,15 @@ def apply_controls(blob, spec, by_name):
     for f_, entries in fs.items():
         # several blocks on one switch: HX Edit numbers the switch's entries in field 10, the first assigned 7, the next
         # 6 (25C, made in HX Edit). With every entry 7 (and field 7 False) the unit froze at load (25D, 27D).
+        # Field 10, in assignment order (HX Edit, 2026-11-22): the first entry 7 if it turns a block on/off, 0 if it
+        # moves a knob; every later one counts down from 7 (after a knob) or 6 (after an on/off). Two knob entries
+        # both left at 0 froze the unit when it was asked for its state, and at start-up.
+        c = 7
         for k, e in enumerate(entries):
-            if e[11][0] == 1:
-                e[10] = 7 - k
+            if k == 0 and e[11][0] != 1:
+                e[10] = 0
+            else:
+                e[10], c = c, c - 1
         blob = replace_node(blob, (3, 8, f_ - 1), list(reversed(entries)))
     blob = set_in_place(blob, (10, 8), len(knobs))
     return set_in_place(blob, (10, 6), cur)
