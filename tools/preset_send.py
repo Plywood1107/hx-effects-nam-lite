@@ -305,12 +305,29 @@ def replace_node(blob, path, value):
     return head + tbl + out[len(head) + len(tbl):]
 
 
-def footswitch(pos, label, colour=525824):
-    """One footswitch entry turning the block at pos on and off, as the unit writes it (preset 1B)."""
-    # 11 -> 7 True: the switch toggles its block on its own; False made the preset's switches act as an either/or group
-    # (FS Test A/B, 2026-11-22). HX Edit writes True for bypass switches.
-    return [{10: 7, 11: {0: 1, 5: label.encode('utf-8') + b'\0', 6: colour, 7: True, 8: pos}, 12: False, 14: b'\0',
-             13: False, 16: 0, 15: False}]
+# A footswitch's LED colour by the block's category (firmware model meta "category"), (on, off): the unit stores the
+# lit colour while the block is on and a dim one while it is off, and HX Edit writes them the same way (every saved
+# preset on the unit, 2026-11-22). Amps and preamps take distortion's yellow; send/return, FX loop and volume take the
+# looper's white (the person's choice: no saved preset showed them).
+LED = {'distortion': (0xd0af00, 0x080600), 'amp': (0xd0af00, 0x080600), 'preamp': (0xd0af00, 0x080600),
+       'dynamics': (0x84ff00, 0x080c00), 'eq': (0x84ff00, 0x080c00),
+       'modulation': (0x0032ff, 0x00040d), 'delay': (0x06ff00, 0x010900), 'reverb': (0xff2d00, 0x100400),
+       'pitch': (0x3200ff, 0x03000b), 'synth': (0x3200ff, 0x03000b), 'filter': (0x3200ff, 0x03000b),
+       'wah': (0x3200ff, 0x03000b), 'ir': (0xff0028, 0x0b0007),
+       'looper': (0x6bffce, 0x07100c), 'send': (0x6bffce, 0x07100c), 'return': (0x6bffce, 0x07100c),
+       'fxloop': (0x6bffce, 0x07100c), 'volume': (0x6bffce, 0x07100c)}
+
+
+def led(category, on):
+    return LED.get(category, LED['distortion'])[0 if on else 1]
+
+
+def footswitch(pos, label, on=True, category=''):
+    """One footswitch entry turning the block at pos on and off, as the unit writes it.
+    11 -> 7 is the block's on/off and 11 -> 6 its LED colour (led()): both must match the block as loaded. A preset
+    with every switch stored on and dim yellow loaded with its LEDs dim and needed presses to line up (2026-11-22)."""
+    return [{10: 7, 11: {0: 1, 5: label.encode('utf-8') + b'\0', 6: led(category, on), 7: bool(on), 8: pos}, 12: False,
+             14: b'\0', 13: False, 16: 0, 15: False}]
 
 
 def fs_knob(pos, ki, label, colour=462860):
@@ -357,7 +374,7 @@ def model_table(image):
         ni = m['words'][2]
         if ni in pid and ni in btype:
             e = {'name': m['name'], 'display': m['displayName'], 'pid': pid[ni], 'btype': btype[ni],
-                 'params': [knob(p) for p in m['params']]}
+                 'category': (m.get('meta') or {}).get('category', ''), 'params': [knob(p) for p in m['params']]}
             by_name[m['name']] = e
             by_pid.setdefault(pid[ni], e)
     return by_name, by_pid
@@ -386,10 +403,22 @@ def block_value(t, v):
 IR_TYPE = 19                     # IR blocks: no field 12, and field 27 = the MD5 (hex) of the IR in their slot
 
 
+# The loopers the unit stores in a short form of their own (block kind 7, every looper in the 115 saved presets,
+# 2026-11-22): {8: preset id, 9: block type, 10: on, 7: {2: 4, 3: 4, 4: [Playback, Overdub, lowCut, highCut]}}.
+# Their other knobs are the looper's transport, which a preset doesn't keep. Read as kind 6, they're skipped.
+SHORT_LOOPERS = ('HD2_LooperMono', 'HD2_LooperStereo', 'HD2_LooperOneSwitchMono', 'HD2_LooperOneSwitchStereo')
+BLOCK_KINDS = (6, 7)                             # a position holding a block (8: empty)
+
+
 def make_block(model, values=None, on=True, ir_md5=None):
     """A block map for a model_table() entry: knob values by position (defaults where values is None or shorter),
     with a Trails switch (off) for delays/reverbs that have no DryThru-style last knob of their own."""
     ps_ = model['params']
+    if model['name'] in SHORT_LOOPERS:
+        vals = [block_value(p['type'], p['default']) for p in ps_[:4]]
+        for i, v in enumerate((values or [])[:4]):
+            vals[i] = block_value(ps_[i]['type'], v)
+        return {19: 7, 20: {8: model['pid'], 9: model['btype'], 10: bool(on), 7: {2: 4, 3: 4, 4: vals}}}
     vals = [block_value(p['type'], p['default']) for p in ps_]
     for i, v in enumerate(values or []):
         if i < len(vals):
@@ -469,11 +498,11 @@ def add_block(blob, pos, model, values=None, on=True, ir_md5=None):
 def remove_block(blob, pos):
     """blob with block position pos emptied (snapshot states for it set on, as an empty position has them)."""
     _, body = parse_blob(blob)
-    if body[0][22][pos][19] != 6:
+    if body[0][22][pos][19] not in BLOCK_KINDS:
         raise SystemExit(f'block position {pos} holds no effect block')
     blob = _set_snapshot_states(_replace_entry(blob, pos, EMPTY_BLOCK), pos, True)
     _, body = parse_blob(blob)
-    if pos in PATH_B and not any(body[0][22][p][19] == 6 for p in PATH_B):
+    if pos in PATH_B and not any(body[0][22][p][19] in BLOCK_KINDS for p in PATH_B):
         blob = set_path_b(blob, False)
     return blob
 
@@ -536,6 +565,8 @@ def apply_controls(blob, spec, by_name):
         if pos not in blocks:
             raise SystemExit(f'{where}: no block at {pos}')
         m = by_name[blocks[pos]['model']]
+        if m['name'] in SHORT_LOOPERS:
+            raise SystemExit(f'{where}: the looper\'s knobs can\'t take a controller (a preset keeps only their values)')
         names = [p['name'] for p in m['params']]
         if isinstance(knob, str) and knob not in names:
             raise SystemExit(f"{where}: {blocks[pos]['model']} has no knob {knob!r} (knobs: {names})")
@@ -564,7 +595,12 @@ def apply_controls(blob, spec, by_name):
             if not 1 <= int(f_) <= len(body[3][8]):
                 raise SystemExit(f'footswitch {f_}: 1..{len(body[3][8])}')
             m = by_name[b['model']]
-            fs.setdefault(int(f_), []).append(footswitch(pos, b.get('label') or m['display'] or m['name'])[0])
+            st = (sp.get('states') or {}).get(str(pos)) or (sp.get('states') or {}).get(pos)
+            on = st[cur] if st else b.get('on', True)
+            if m['name'] in SHORT_LOOPERS:
+                on = False       # a looper's switch is stored off and dim whatever the block (all 60 saved, 2026-11-22)
+            fs.setdefault(int(f_), []).append(footswitch(pos, b.get('label') or m['display'] or m['name'], on,
+                                                         m.get('category', ''))[0])
     knobs = []                                   # (source, pos, ki, p, min, max, cc, per-snapshot values, label)
     for kn in sp.get('knobs', []):
         ki, p = knob_of(int(kn['pos']), kn['knob'], 'snapshots.knobs')
@@ -624,7 +660,7 @@ def build_preset(base, spec, by_name, ir_md5s=None):
     _, body = parse_blob(base)
     blob = base
     for pos, blk in enumerate(body[0][22]):
-        if blk[19] == 6:
+        if blk[19] in BLOCK_KINDS:
             blob = remove_block(blob, pos)
     for j in range(len(body[3][8])):
         blob = replace_node(blob, (3, 8, j), None)

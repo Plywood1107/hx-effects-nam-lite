@@ -180,8 +180,17 @@
     return t === 1 ? !!v : t === 2 ? pyRound(+v) : F(+v);
   }
 
-  function makeBlock(model, values, on, irMd5) {
+  // The loopers the unit stores in a short form (block kind 7): {8: preset id, 9: block type, 10: on,
+  // 7: {2: 4, 3: 4, 4: [Playback, Overdub, lowCut, highCut]}} (preset_send.py SHORT_LOOPERS)
+  const SHORT_LOOPERS = ["HD2_LooperMono", "HD2_LooperStereo", "HD2_LooperOneSwitchMono", "HD2_LooperOneSwitchStereo"];
+  const isBlock = blk => blk[19] === 6 || blk[19] === 7;
+  function makeBlock(model, values, on, irMd5, name) {
     const [pid, btype, params] = model;
+    if (SHORT_LOOPERS.includes(name)) {
+      const vals = params.slice(0, 4).map(p => value(p[1], p[2]));
+      (values || []).slice(0, 4).forEach((v, i) => { vals[i] = value(params[i][1], v); });
+      return M([19, 7], [20, M([8, pid], [9, btype], [10, !!on], [7, M([2, 4], [3, 4], [4, vals])])]);
+    }
     const vals = params.map(p => value(p[1], p[2]));
     (values || []).forEach((v, i) => { if (i < vals.length) vals[i] = value(params[i][1], v); });
     let n3 = vals.length;
@@ -211,22 +220,33 @@
     blob = setInPlace(blob, [0, 22, 21, 20, 18], !!used);
     return setInPlace(blob, [0, 21], used ? 1 : 0);
   }
-  function addBlock(blob, pos, model, values, on, irMd5) {
+  function addBlock(blob, pos, model, values, on, irMd5, name) {
     if (!PATH_A.includes(pos) && !PATH_B.includes(pos)) throw new Error(`block position ${pos}: 1..9 or 12..20`);
     const body = parse(blob).body;
     if (body[0][22][pos][19] !== 8) throw new Error(`block position ${pos} is not empty`);
-    blob = replaceNode(blob, [0, 22, pos], makeBlock(model, values, on, irMd5));
+    blob = replaceNode(blob, [0, 22, pos], makeBlock(model, values, on, irMd5, name));
     if (PATH_B.includes(pos)) blob = setPathB(blob, true);
     return setSnapshotStates(blob, pos, on);
   }
   function removeBlock(blob, pos) {
     blob = setSnapshotStates(replaceNode(blob, [0, 22, pos], EMPTY_BLOCK), pos, true);
     const body = parse(blob).body;
-    if (PATH_B.includes(pos) && !PATH_B.some(p => body[0][22][p][19] === 6)) blob = setPathB(blob, false);
+    if (PATH_B.includes(pos) && !PATH_B.some(p => isBlock(body[0][22][p]))) blob = setPathB(blob, false);
     return blob;
   }
-  const footswitch = (pos, label, colour = 525824) =>
-    [M([10, 7], [11, M([0, 1], [5, rawz(label)], [6, colour], [7, true], [8, pos])], [12, false], [14, rawz("")],
+  // A footswitch's LED colour by the block's category (the model's 5th field), [on, off]: the unit stores the lit colour
+  // while the block is on and a dim one while it is off (preset_send.py LED). Amps and preamps take distortion's yellow;
+  // send/return, FX loop and volume the looper's white.
+  const LED = { distortion: [0xd0af00, 0x080600], amp: [0xd0af00, 0x080600], preamp: [0xd0af00, 0x080600],
+    dynamics: [0x84ff00, 0x080c00], eq: [0x84ff00, 0x080c00], modulation: [0x0032ff, 0x00040d], delay: [0x06ff00, 0x010900],
+    reverb: [0xff2d00, 0x100400], pitch: [0x3200ff, 0x03000b], synth: [0x3200ff, 0x03000b], filter: [0x3200ff, 0x03000b],
+    wah: [0x3200ff, 0x03000b], ir: [0xff0028, 0x0b0007], looper: [0x6bffce, 0x07100c], send: [0x6bffce, 0x07100c],
+    return: [0x6bffce, 0x07100c], fxloop: [0x6bffce, 0x07100c], volume: [0x6bffce, 0x07100c] };
+  const led = (category, on) => (LED[category] || LED.distortion)[on ? 0 : 1];
+  // 11 -> 7 is the block's on/off and 11 -> 6 its LED colour: both must match the block as loaded (a preset with every
+  // switch stored on and dim yellow loaded with its LEDs dim and needed presses to line up, 2026-11-22)
+  const footswitch = (pos, label, on = true, category = "") =>
+    [M([10, 7], [11, M([0, 1], [5, rawz(label)], [6, led(category, on)], [7, !!on], [8, pos])], [12, false], [14, rawz("")],
        [13, false], [16, 0], [15, false])];
 
   // ---------- snapshots, controllers, footswitches (preset_send.py apply_controls) ----------
@@ -257,6 +277,7 @@
     }
     const knobOf = (pos, knob, where) => {
       if (!blocks[pos]) throw new Error(`${where}: no block at ${pos}`);
+      if (SHORT_LOOPERS.includes(blocks[pos].model)) throw new Error(`${where}: the looper's knobs can't take a controller`);
       const params = models[blocks[pos].model][2];
       const ki = typeof knob === "string" ? params.findIndex(p => p[0] === knob) : +knob;
       if (ki < 0) throw new Error(`${where}: ${blocks[pos].model} has no knob ${knob}`);
@@ -276,7 +297,10 @@
       for (const f of sws) {
         if (!(f >= 1 && f <= body[3][8].length)) throw new Error(`footswitch ${f}: 1..${body[3][8].length}`);
         const m = models[b.model];
-        push(fs, +f, footswitch(pos, b.label || m[3] || b.model)[0]);
+        const st = (sp.states || {})[pos];
+        // a looper's switch is stored off and dim whatever the block's state (every saved preset, 2026-11-22)
+        const on = SHORT_LOOPERS.includes(b.model) ? false : st && st.length ? !!st[cur] : b.on !== false;
+        push(fs, +f, footswitch(pos, b.label || m[3] || b.model, on, m[4] || "")[0]);
       }
     }
     const knobs = [];
@@ -329,7 +353,7 @@
   function build(base, spec, models, irMd5s) {
     const body = parse(base).body;
     let blob = base;
-    body[0][22].forEach((blk, pos) => { if (blk[19] === 6) blob = removeBlock(blob, pos); });
+    body[0][22].forEach((blk, pos) => { if (isBlock(blk)) blob = removeBlock(blob, pos); });
     for (let j = 0; j < body[3][8].length; j++) blob = replaceNode(blob, [3, 8, j], null);
     for (const b of spec.blocks) {
       const m = models[b.model];
@@ -342,7 +366,7 @@
         md5 = (irMd5s || {})[slot];
         if (!md5) throw new Error(`IR block at ${b.pos}: User IR slot ${slot} is empty on the unit`);
       }
-      blob = addBlock(blob, +b.pos, m, vals, b.on !== false, md5);
+      blob = addBlock(blob, +b.pos, m, vals, b.on !== false, md5, b.model);
     }
     blob = applyControls(blob, spec, models);
     blob = setInPlace(blob, [0, 22, 11, 20, 15, 13], spec.split ?? 1);    // always written: see the format notes

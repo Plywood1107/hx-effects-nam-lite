@@ -671,8 +671,18 @@
 
   // irSession(o, fn): the running unit (the one the page may use, or the one picked), its API opened, fn(api) run.
   // o: { usb, log, sleep }. The browser asks for the device when none is allowed yet (needs a click).
-  async function irSession(o, fn) {
+  // One session at a time, and a short gap after the last one closed: a quick reconnect jammed the unit's USB
+  // (tools/preset_send.py tests, 2026-11-22). A page may start one per click.
+  var sessionQueue = Promise.resolve(), sessionEnd = 0, SESSION_GAP = 1500;
+  function irSession(o, fn) {
+    var run = sessionQueue.then(function () { return oneSession(o, fn); });
+    sessionQueue = run.then(function () {}, function () {});
+    return run;
+  }
+  async function oneSession(o, fn) {
     o.sleep = o.sleep || realSleep; o.log = o.log || function () {};
+    var wait = sessionEnd + SESSION_GAP - Date.now();
+    if (wait > 0) await realSleep(wait);
     var dev = await present(o, MAIN, 0xEF);
     if (!dev) {
       try { dev = await o.usb.requestDevice({ filters: MAIN }); }
@@ -699,6 +709,7 @@
       await ch.close();
       ch.reading = false;
       await release(dev);
+      sessionEnd = Date.now();
     }
   }
 

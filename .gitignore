@@ -16,6 +16,7 @@ tools/usb/usblog_hxedit.dylib
 # Claude Code agent worktrees
 .claude/
 
-# Preset builder: generated from the local HX Edit install (Line 6 data)
+# Preset builder: local test tables (fw-models.js) and the old HX Edit extract. fw-catalog.js, the extracted model
+# tables the page loads, is committed (make_catalog.js).
 tools/preset-builder/hx-data.js
 tools/preset-builder/fw-models.js

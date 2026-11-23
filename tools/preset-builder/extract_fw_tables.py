@@ -6,7 +6,7 @@ order (docs/hxedit-preset-format.md, "On the wire" and "Building presets"). Thos
 from HX Edit: this reads them from Line 6's stock 3.80 file (the "stock" build) and from this repo's built images
 (nam / amps / full, from build.py), with tools/preset_send.py model_table(), and writes fw-models.js:
 
-  window.FW_MODELS = {builds: {stock: {symbol: [pid, block type, [[name, type, default, min, max], ...], display name], ...}, ...}}
+  window.FW_MODELS = {builds: {stock: {symbol: [pid, block type, [[name, type, default, min, max], ...], display name, category], ...}, ...}}
 
 type: 1 switch, 2 whole number, 3 decimal. In a built image a custom effect's host model carries the custom effect's
 own knobs. fw-models.js holds Line 6 model data: it is git-ignored; run this on each machine after building.
@@ -45,7 +45,7 @@ def main():
             continue
         by_name, _ = ps.model_table(image)
         out[build] = {name: [m['pid'], m['btype'], [[p['name'], p['type'], num(p['default']), num(p['min']), num(p['max'])]
-                                                      for p in m['params']], m['display']]
+                                                      for p in m['params']], m['display'], m.get('category', '')]
                       for name, m in by_name.items()}
         print(f'{build}: {len(by_name)} models from {os.path.relpath(image, REPO)}')
     if missing:

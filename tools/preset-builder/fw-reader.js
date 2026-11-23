@@ -5,7 +5,8 @@
 // type, units and the names of its choices. Nothing here is Line 6 data: it is read from the archive the page is
 // given (the stock .hxf, or a build made from it with a recipe, firmware-core.js).
 //
-//   FWREAD.read(archive) -> {name: {pid, btype, cost, display, category, subcategory, params: [knob...]}}
+//   FWREAD.read(archive) -> {name: {pid, btype, cost, display, category, subcategory, legacy, params: [knob...]}}
+//   legacy: the firmware files the model under Legacy (the older Line 6 models), as the unit's browser does
 //   knob: {name, type (1 switch, 2 whole number, 3 decimal), default, min, max, meta: {displayType, displayName, ...}}
 (function (root) {
   "use strict";
@@ -113,7 +114,7 @@
       if (!row.has(m.nameIdx) || !btype.has(m.nameIdx) || out[m.name]) continue;
       const [pid, cost] = row.get(m.nameIdx);
       out[m.name] = { pid, btype: btype.get(m.nameIdx), cost, display: m.meta.displayName || "",
-                      category: m.meta.category || "", subcategory: m.meta.subcategory || "",
+                      category: m.meta.category || "", subcategory: m.meta.subcategory || "", legacy: m.meta.legacy === "true",
                       params: m.params.map(p => ({ name: p.name, type: p.type, slot: p.slot, default: p.default, min: p.min, max: p.max, meta: p.meta })) };
     }
     return out;
