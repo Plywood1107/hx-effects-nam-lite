@@ -201,6 +201,18 @@
   dialog.unit select { width: 100%; font: inherit; padding: 7px; margin: 8px 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
   dialog.unit .row-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
   dialog.unit.wide { max-width: 760px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .recovery { margin: 12px 12px 0; padding: 10px 16px; font-size: 13px; }
+  .recovery summary { cursor: pointer; font-weight: 600; color: var(--warn); }
+  .recovery ol { margin: 10px 0 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+  .recovery em { font-style: normal; color: var(--text); font-weight: 600; }
+  .fw-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .fw-warn { border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border-radius: 10px;
+    padding: 10px 12px; margin: 10px 0; }
+  .fw-warn strong { color: var(--warn); }
+  dialog.unit .fw-warn p { font-size: 13px; }
+  .fw-warn label { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; margin-top: 8px; cursor: pointer; }
+  .fw-warn input { margin-top: 3px; accent-color: var(--warn); }
   .unit-presets { max-height: min(60vh, 560px); overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin: 10px 0; padding-right: 4px; }
   .unit-presets .bank { display: grid; grid-template-columns: 28px repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
   .unit-presets .bn { color: var(--faint); font-size: 12px; text-align: right; padding-right: 4px; align-self: center; }
@@ -257,7 +269,8 @@ const CATEGORY_GROUP = {
 };
 const STORE_KEY = "hx-effects-preset-builder-v2";
 // This repo's firmware builds (build.py), each adding to the one before
-const BUILDS = { stock: "Stock 3.80", nam: "NAM build", amps: "NAM + Amps build", full: "Full build" };
+// named by what each adds (build.py nam|amps|full), never "full": the person has to recognise what their unit runs
+const BUILDS = { stock: "Stock 3.80 firmware", nam: "NAM firmware", amps: "NAM + Amps firmware", full: "NAM + Amps + Effects firmware" };
 const BUILD_ORDER = ["stock", "nam", "amps", "full"];
 const AMP_LIMIT = 3;   // amps + preamps per preset on the amp builds (docs/amps-findings.md)
 const TRAILS_TYPES = [8, 9, 13];   // delays/reverbs: a preset stores a Trails switch after their knobs (preset-core.js)
@@ -634,11 +647,33 @@ const unitIcon = up => { const s = icon("", 15); s.innerHTML = (up ? '<path d="M
   : '<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/>') + '<path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/>'; return s; };
 const powerIcon = () => { const s = icon("", 16); s.innerHTML = '<path d="M12 3v8"/><path d="M6.3 6.6a8 8 0 1011.4 0"/>'; return s; };
 
+// ---------- under the header: getting the unit back after a preset locks it up ----------
+// What worked on the unit (2026-11-22): a power cycle; FS4+FS5 held at power-on starts it on 1A with Global Settings
+// reset and the presets kept; then writing over the bad slot without loading it.
+function renderRecovery() {
+  const step = (title, ...text) => el("li", {}, el("strong", {}, title), " ", ...text);
+  return el("details", { class: "panel recovery", open: !!ui.recoveryOpen, ontoggle: e => { ui.recoveryOpen = e.target.open; } },
+    el("summary", {}, "If a preset locks up the unit"),
+    el("ol", {},
+      step("Switch the HX Effects off and on.", "Unplugging the USB cable doesn't help: the unit has its own power. " +
+        "If it starts and plays, go to step 3."),
+      step("If it locks up again while starting", "(it starts on the last preset it played): switch it off, then hold " +
+        "footswitches FS4 and FS5 while you switch it on, until it has started. It starts on preset 1A with its Global " +
+        "Settings back to their defaults; your presets are kept."),
+      step("Don't load the bad preset again.", "Replace it from this page: build a preset (or leave one block), click ",
+        el("em", {}, "Send to unit"), ", pick the bad slot and untick ", el("em", {}, "Load it on the unit afterwards"),
+        ". To look at it first, use ", el("em", {}, "Open from unit"), " with ", el("em", {}, "Switch the unit to it too"),
+        " unticked. In HX Edit, don't double-click it: that loads it."),
+      step("Keep 1A a simple preset you trust.", "Step 2 starts the unit on 1A, so never send a test preset there."),
+      step("Last resort:", "Line 6's factory reset (see the HX Effects owner's manual) erases every preset on the unit.")),
+    el("p", { class: "meta" }, "A preset over the unit's DSP limit doesn't lock it up: it loads with nothing running."));
+}
+
 function render() {
   const focusId = document.activeElement && document.activeElement.id;
   const caret = document.activeElement && document.activeElement.selectionStart;
   const scroll = document.querySelector(".models") && document.querySelector(".models").scrollTop;
-  app.replaceChildren(el("div", { class: "app" }, renderHeader(),
+  app.replaceChildren(el("div", { class: "app" }, renderHeader(), renderRecovery(),
     el("div", { class: "main" }, renderBrowser(),
       el("div", { class: "work" }, renderToolbar(), renderChain(), renderEditor()))));
   if (focusId && !focusId.startsWith("slot-")) {
@@ -658,9 +693,9 @@ function renderHeader() {
     el("label", { class: "visually-hidden", for: "presetName" }, "Preset name"),
     el("input", { id: "presetName", class: "preset-name", maxlength: "16", value: state.name, spellcheck: "false",
       oninput: e => { state.name = e.target.value; save(); } }),
-    el("label", { class: "visually-hidden", for: "buildSel" }, "Firmware"),
-    el("select", { id: "buildSel", title: "Which of this repo's firmware builds is on your unit", onchange: e => setBuild(e.target.value) },
-      BUILD_ORDER.map(k => el("option", { value: k, selected: k === state.build }, BUILDS[k] || k))),
+    el("label", { class: "fw-pick", for: "buildSel", title: "Pick the firmware your HX Effects actually runs: the page can't check it" }, "Your unit runs",
+      el("select", { id: "buildSel", onchange: e => setBuild(e.target.value) },
+        BUILD_ORDER.map(k => el("option", { value: k, selected: k === state.build }, (BUILDS[k] || k).replace(/ firmware$/, ""))))),
     el("div", { class: "spacer" }),
     fileInput,
     el("div", { class: "btn-group" },
@@ -1460,7 +1495,7 @@ async function unitPresets() {
       ui.cleanSig = editorSig();
       say(`${sw ? "Loaded" : "Opened"} ${slotLabel(n)} ${names.get(n)}${sw ? " on the unit and here" : " here (the unit stays where it is)"}.`);
       if (r.skipped) say(`${r.skipped} block(s) outside the two paths not shown.`);
-      if (r.unknown) say(`${r.unknown} block(s) not in the ${BUILDS[state.build]}: change Firmware and open it again.`);
+      if (r.unknown) say(`${r.unknown} block(s) not in the ${BUILDS[state.build]}: change "Your unit runs" and open it again.`);
     } catch (e) {
       say("Stopped: " + e.message + usbHint(e));
     } finally { busy = false; draw(); }
@@ -1486,7 +1521,23 @@ async function unitDialog() {
   const sel = el("select", { id: "unitSlot", disabled: true }, el("option", {}, "Connecting…"));
   const go = el("button", { class: "btn primary", disabled: true }, "Send");
   const loadAfter = el("input", { type: "checkbox", id: "loadAfter", checked: true });
+  // The page can't ask the unit which firmware it runs (it reports the same version and build id on every build), so
+  // the person confirms it on every send. On other firmware a preset's blocks can be other effects with these knob
+  // values, or models the unit doesn't have.
+  const fwName = BUILDS[state.build];
+  const extra = [...new Set(all.map(b => byId[b.model]).filter(m => m && m.fw && m.fw.build).map(m => m.name))];
+  const fwOk = el("input", { type: "checkbox", id: "fwOk", onchange: () => { go.disabled = !fwOk.checked || !listed; } });
+  let listed = false;
   dlg.append(el("h2", {}, "Send to the HX Effects"),
+    el("div", { class: "fw-warn", role: "alert" },
+      el("p", {}, el("strong", {}, `This preset is built for the ${fwName}.`)),
+      el("p", {}, "Only send it to a unit running exactly that firmware. The page can't check what your unit runs. " +
+        "On any other firmware the preset can load wrong: blocks can turn into different effects with nonsense settings, " +
+        "or load with nothing running, and a bad preset can lock up the unit until it's switched off and on " +
+        "(\"If a preset locks up the unit\", at the top of the page, says how to get it back)."),
+      extra.length ? el("p", {}, `It uses ${extra.length === 1 ? "a model" : extra.length + " models"} that only this repo's firmware has: ` +
+        extra.slice(0, 6).join(", ") + (extra.length > 6 ? ", …" : "") + ".") : null,
+      el("label", { for: "fwOk" }, fwOk, `My HX Effects runs the ${fwName}.`)),
     el("p", {}, "Quit HX Edit and Line 6 Updater first: they hold the USB connection. Chrome asks which device to use the first time."),
     sel,
     el("p", {}, loadAfter, el("label", { for: "loadAfter" }, " Load it on the unit afterwards")),
@@ -1501,7 +1552,7 @@ async function unitDialog() {
     list = await session(api => api.presetList());
   } catch (e) { say("Could not reach the unit: " + e.message + usbHint(e)); return; }
   sel.replaceChildren(...list.map(p => el("option", { value: p.index }, `${slotLabel(p.index)}  ${p.name}`)));
-  sel.disabled = false; go.disabled = false;
+  sel.disabled = false; listed = true; go.disabled = !fwOk.checked;
   // the slot the editor's preset came from (Unit presets), else the first empty one
   const from = list.find(p => p.index === state.unitSlot), free = list.find(p => p.name === "New Preset");
   if (from || free) sel.value = (from || free).index;
@@ -1509,7 +1560,7 @@ async function unitDialog() {
     const n = +sel.value, target = list.find(p => p.index === n);
     go.disabled = true; sel.disabled = true;
     try {
-      if (target.name !== "New Preset" && !confirm(`Replace ${slotLabel(n)} "${target.name}" on the unit?`)) { go.disabled = false; sel.disabled = false; return; }
+      if (target.name !== "New Preset" && !confirm(`Replace ${slotLabel(n)} "${target.name}" on the unit?`)) { go.disabled = !fwOk.checked; sel.disabled = false; return; }
       await session(async api => {
         const isPreset = b => b && b.length > 10 && String.fromCharCode(...b.slice(1, 9)) === "l6-helix";
         let base = await api.presetRead(n);
@@ -1542,7 +1593,7 @@ async function unitDialog() {
     } catch (e) {
       say("Stopped: " + e.message + usbHint(e));
     }
-    go.disabled = false; sel.disabled = false;
+    go.disabled = !fwOk.checked; sel.disabled = false;
   };
 }
 

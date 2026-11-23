@@ -21,14 +21,19 @@ checks it is the stock 3.80 file. Without `fw-catalog.js` the page falls back to
 reading it in the browser. (`extract_fw_tables.py` writes `fw-models.js` from the images in `build/` for the
 Python/JavaScript cross-check, `check_core.py`; git-ignored.)
 
-The **Firmware** menu picks which of this repo's builds is on the unit (`build.py`), and the model list follows it:
+The **Your unit runs** menu picks which of this repo's builds is on the unit (`build.py`), and the model list follows it.
+The page can't check it: the unit reports the same version and build id on every build, and nothing over USB lists its
+models. So **Send** shows a warning naming the build the preset is made for (and any models only this repo's
+firmware has), and won't send until "My HX Effects runs the …" is ticked. **If a preset locks up the unit**, at the top of the page under the header, gives
+the recovery steps (power cycle; FS4 + FS5 held at power-on starts on 1A with Global Settings reset, presets kept;
+then replace the bad slot without loading it):
 
 | Firmware | Adds |
 |---|---|
-| Stock 3.80 | nothing: HX Effects' own models |
-| NAM build | NAM A2 Lite (on mono Regal Bass DI) and Click (on mono Mod/Chorus Echo) |
-| NAM + Amps build | the HX Stomp's 111 amps (Amp) and 112 preamps (Preamp), at most three per preset |
-| Full build | the effects a plain `build_all.py` makes (Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, ...) |
+| Stock 3.80 firmware | nothing: HX Effects' own models |
+| NAM firmware | NAM A2 Lite (on mono Regal Bass DI) and Click (on mono Mod/Chorus Echo) |
+| NAM + Amps firmware | the HX Stomp's 111 amps (Amp) and 112 preamps (Preamp), at most three per preset |
+| NAM + Amps + Effects firmware | the effects a plain `build_all.py` makes (Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, ...) |
 
 Under the categories, **All / Mono / Stereo / Legacy** filter the list the way the unit's browser files models: Legacy
 holds the older Line 6 models (the firmware's own `legacy` flag), Mono and Stereo the rest, and a model picked from
