@@ -45,6 +45,7 @@ Prefer a terminal? The same firmware can be built and flashed from this repo: se
 >   `HX_Effects_v3.80.0_0xd97239907.hxf` (MD5 `7c2ebdf1bffb6bcc5f89dda97f91e40c`) and refuses any other. Don't
 >   edit that check: the wrong addresses can leave the unit unable to boot.
 > - Know how to put the unit back on stock firmware before you start: [Recovery](#recovery).
+> - Using any of this is **your responsibility**, and no liability is accepted: read the [Disclaimer](#disclaimer).
 
 ## The three builds
 
@@ -128,6 +129,26 @@ Python 3.10+ and `make` with a C compiler (`xcode-select --install` on a Mac, `b
    with no NAM block first), or send it with `python tools/ir_upload.py put 5 "My Amp.wav"` (`list`, `rename`,
    `copy`, `delete` and `get` do the rest). Demo captures, already converted, are in `captures/`.
 
+## Disclaimer
+
+**Everything here is provided "as is", without warranty of any kind**, express or implied, including any warranty
+that it works, is fit for a particular purpose, or won't damage your equipment or data.
+
+**Using it is entirely your own decision and your own responsibility.** That covers building or installing modified
+firmware, using the setup page or the preset builder, sending presets or IRs to your unit, and anything else in this
+repository. You are responsible for checking what you install and for backing up your presets, IRs and settings
+first.
+
+**To the fullest extent permitted by law, the author and contributors accept no liability** for any loss or damage of
+any kind arising from using, or being unable to use, this repository, the web pages or anything built with them.
+That includes damage to your HX Effects or any other equipment, a unit that won't start, lost or corrupted presets,
+IRs or settings, hearing damage or harm from unexpected or loud sounds, a voided warranty, and any direct, indirect,
+incidental or consequential loss. If you don't accept this, don't use it.
+
+Nothing here is affiliated with, endorsed by or supported by Line 6 or Yamaha Guitar Group; don't ask them for help
+with a modified unit. The GPL‑3.0 licence's own "no warranty" and "limitation of liability" terms (sections 15 and 16)
+also apply.
+
 ## Copyright notice
 
 **No Line 6 / Yamaha Guitar Group code or firmware is in this repository, and none is distributed with it.**
@@ -150,8 +171,8 @@ Python 3.10+ and `make` with a C compiler (`xcode-select --install` on a Mac, `b
 - The tools let an owner run software of their choosing on hardware they own, for personal, non‑commercial use. No
   copy protection, signing or encryption is bypassed: the firmware container uses checksums only, which the tools
   recompute. The offsets and formats documented here come from inspecting the publicly downloadable firmware file.
-- Modifying your unit's firmware may void its warranty and is entirely at your own risk; the authors accept no
-  liability for any damage to hardware or data.
+- Modifying your unit's firmware may void its warranty and is entirely at your own risk: see the
+  [Disclaimer](#disclaimer).
 
 If you represent Line 6 or Yamaha Guitar Group and believe any part of this repository infringes your rights, open
 an issue or contact the maintainer and it will be addressed promptly.
