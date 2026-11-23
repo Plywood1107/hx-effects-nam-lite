@@ -30,6 +30,8 @@ Both give you exactly the same firmware: you pick NAM only, NAM + Amps, or NAM +
 walks you through every step; nothing is uploaded, your firmware file never leaves your computer. If you're not sure
 which to use, use the setup page.
 
+![The setup page: it makes the firmware from Line 6's file, installs it, and converts NAM captures](docs/images/setup-page.jpg)
+
 > ## ⚠️ Works on HX Effects firmware 3.80.0 only
 >
 > The build works on one exact file: **`HX_Effects_v3.80.0_0xd97239907.hxf`**, MD5
@@ -42,6 +44,23 @@ the unit back on stock firmware ([Recovery](#recovery)) before you start.
 
 > **Unofficial and experimental.** Not affiliated with, endorsed by or supported by Line 6 or Yamaha Guitar Group.
 > Installing modified firmware is at your own risk and may void your warranty.
+
+## Building presets: the preset builder
+
+![The preset builder: a chain of blocks on two paths, the model list, and a reverb block's knobs](docs/images/preset-builder.jpg)
+
+HX Edit can't show or edit NAM, the amps or the new effects, so presets that use them are built on the unit itself or
+in the **[preset builder](https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/)** (Chrome or Edge, HX
+Edit closed). It works like an editor for the unit:
+
+- every model of your firmware, with its knobs, in the unit's categories (Mono / Stereo / Legacy), DSP load shown;
+- two paths with split and merge, four snapshots, footswitches, MIDI bypass and knob controllers (EXP, FS, MIDI);
+- **Send to unit** writes the preset straight into a slot over USB; **Open from unit** lists the unit's presets and
+  switches to the one you click; Save / Open / Export .hlx for files.
+
+Pick the firmware your unit runs under **Your unit runs**: the page can't check it, and a preset built for other
+firmware can load wrong. If a preset ever locks the unit up, the page's **If a preset locks up the unit** section
+says how to get it back. Details: [tools/preset-builder/README.md](tools/preset-builder/README.md).
 
 ## The three builds
 
