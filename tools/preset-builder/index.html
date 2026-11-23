@@ -202,7 +202,11 @@
   dialog.unit .row-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
   dialog.unit.wide { max-width: 760px; }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .recovery { margin: 12px 12px 0; padding: 10px 16px; font-size: 13px; }
+  .subbar { display: flex; gap: 12px; align-items: flex-start; margin: 12px 12px 0; }
+  .recovery { flex: 1; min-width: 0; padding: 10px 16px; font-size: 13px; }
+  .to-setup { padding: 10px 16px; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .to-setup:hover { border-color: var(--accent); }
+  @media (max-width: 700px) { .subbar { flex-direction: column; align-items: stretch; } }
   .recovery summary { cursor: pointer; font-weight: 600; color: var(--warn); }
   .recovery ol { margin: 10px 0 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
   .recovery em { font-style: normal; color: var(--text); font-weight: 600; }
@@ -652,7 +656,7 @@ const powerIcon = () => { const s = icon("", 16); s.innerHTML = '<path d="M12 3v
 // reset and the presets kept; then writing over the bad slot without loading it.
 function renderRecovery() {
   const step = (title, ...text) => el("li", {}, el("strong", {}, title), " ", ...text);
-  return el("details", { class: "panel recovery", open: !!ui.recoveryOpen, ontoggle: e => { ui.recoveryOpen = e.target.open; } },
+  const det = el("details", { class: "panel recovery", open: !!ui.recoveryOpen, ontoggle: e => { ui.recoveryOpen = e.target.open; } },
     el("summary", {}, "If a preset locks up the unit"),
     el("ol", {},
       step("Switch the HX Effects off and on.", "Unplugging the USB cable doesn't help: the unit has its own power. " +
@@ -667,6 +671,10 @@ function renderRecovery() {
       step("Keep 1A a simple preset you trust.", "Step 2 starts the unit on 1A, so never send a test preset there."),
       step("Last resort:", "Line 6's factory reset (see the HX Effects owner's manual) erases every preset on the unit.")),
     el("p", { class: "meta" }, "A preset over the unit's DSP limit doesn't lock it up: it loads with nothing running."));
+  // the setup page (WEB: beside this page's folder on the website), where the firmware is built and installed
+  return el("div", { class: "subbar" }, det,
+    el("a", { class: "panel to-setup", href: WEB, title: "Build and install the NAM, amps and effects firmware; send NAM captures as IRs" },
+      "Firmware and NAM captures: setup page →"));
 }
 
 function render() {
@@ -1534,7 +1542,8 @@ async function unitDialog() {
       el("p", {}, "Only send it to a unit running exactly that firmware. The page can't check what your unit runs. " +
         "On any other firmware the preset can load wrong: blocks can turn into different effects with nonsense settings, " +
         "or load with nothing running, and a bad preset can lock up the unit until it's switched off and on " +
-        "(\"If a preset locks up the unit\", at the top of the page, says how to get it back)."),
+        "(\"If a preset locks up the unit\", at the top of the page, says how to get it back). " +
+        "Not sure what your unit runs? The setup page (link at the top) builds and installs this repo's firmware."),
       extra.length ? el("p", {}, `It uses ${extra.length === 1 ? "a model" : extra.length + " models"} that only this repo's firmware has: ` +
         extra.slice(0, 6).join(", ") + (extra.length > 6 ? ", …" : "") + ".") : null,
       el("label", { for: "fwOk" }, fwOk, `My HX Effects runs the ${fwName}.`)),
