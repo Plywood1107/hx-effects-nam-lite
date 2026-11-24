@@ -21,6 +21,8 @@ through the Bolt, Rocket!, Quality Polis, Garrrry Tank or Bam Crusher effects. P
 Two pages do everything in your browser (Chrome or Edge, Mac or Windows). Nothing is installed and nothing is
 uploaded.
 
+**[▶ Video tutorial](https://www.youtube.com/watch?v=yktLS1vPSZ4)**: how to set it up and run it, step by step.
+
 <table>
 <tr>
 <td width="50%" valign="top">
