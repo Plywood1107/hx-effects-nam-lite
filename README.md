@@ -2,13 +2,15 @@
 
 ![An HX Effects running a Tweed Blues Brt amp and two NAM A2 Lite blocks](docs/images/hx-effects.jpg)
 
-This repo adds amp modelling to the Line 6 HX Effects in two ways:
+This repo adds amp and cab modelling to the Line 6 HX Effects:
 
 - **Neural Amp Modeler (NAM) A2 Lite**: captures are loaded into the unit's IR slots and played by the NAM A2 Lite
   block (Distortion → Mono).
 - **Line 6's own 111 HX Stomp amps and 112 preamps** now run on the device. They were already in the firmware but
-  never listed: there's a new Amps group under Distortion and a Preamps group under EQ. Its 41 legacy cabs are
-  there too, in a Cabs group under EQ (NAM + Amps + Effects build).
+  never listed: there's a new Amps group under Distortion and a Preamps group under EQ.
+- **Line 6's own 41 HX Stomp legacy cabs**, also already in the firmware, in a new Cabs group under EQ, with Mic,
+  Distance and the rest: up to two per preset, so a cab after NAM or an amp in each path (NAM + Amps + Effects
+  build).
 
 If you want them, it also adds some frankly pretty daft noisy effects for those who like to make sounds that bear no
 resemblance to guitars: glitchy, stuttering, pure boggin' sounds only a twisted person like me could appreciate. The
