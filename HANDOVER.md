@@ -544,7 +544,14 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
   worst 9,830 cycles (was 515 / 452 / 6,821): the check's own 9,000 limit fails until the user decides Drum Chapel's
   cost (by build_all's rule about 300 + words copied). The first build before the kit move did not fit (the overlay
   region's data 128 words over, before Click); the image with the move: see below.
-- Still to do: the image with the new kit (ask before flashing), Drum Chapel's cost, user kits, the preset
+- **Test image** (`build.py full --quick`, kept as `build/HX_Effects_v3.80.0_NAM_Amps_Effects_AcousticKit.hxf`):
+  MD5 489fb38678d0ff0b1455b4c4608d5617, verified ALL OK; the overlay members' swap words, Drum Chapel 1107 code +
+  254 data (was 774 + 452). Flashed 2026-11-27, booted, no HardFault; the kit played on the unit, but Nonlinear froze
+  it (the bug below, fixed on main and merged in at fe995d6).
+- **Release image** (`build.py full` at fe995d6, kept as `build/HX_Effects_v3.80.0_NAM_Amps_Effects_AcousticKit_Fix.hxf`):
+  MD5 bda07f1eae1f58a32e889eb5ad20a8ce, verified ALL OK; flashed 2026-11-27, booted, no HardFault.
+  `web/recipe-full.bin` is made from it (`tools/recipe.py apply` reproduces the MD5). Released as v1.1.0.
+- Still to do: Drum Chapel's cost (build_all's rule gives about 1,650 from 1,361 words; the image still declares 1,550), user kits, the preset
   builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
 ## 2026-11-27: Nonlinear froze the DSP (fixed: Drum Chapel's hook moved from 0x23ac to 0x104)
 
