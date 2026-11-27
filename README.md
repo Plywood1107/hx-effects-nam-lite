@@ -65,7 +65,10 @@ Prefer a terminal? The same firmware can be built and flashed from this repo: se
 
 **NAM A2 Lite** (Distortion → Mono, in place of the mono Regal Bass DI): up to three per preset (two in NAM + Amps +
 Effects). Model picks the User IR slot holding the capture (1–21); Input ±20 dB; Bass, Mid, Treble and Presence
-±12 dB; Ch Vol; Polarity. Knobs centre at 5.0.
+±12 dB; Ch Vol; Polarity. Knobs centre at 5.0. With Input at 5.0, a capture that records its interface's level
+(`input_level_dbu`) gets your guitar at the level the captured amp got, if the HX Effects reaches 0 dBFS at
++11.5 dBu. That figure is the HX Stomp's, measured by users, and has not been measured on an HX Effects; it assumes
+Global Settings → Input Level on Instrument. If a capture feels too clean or too hot, use the Input knob.
 
 **Amps** (Distortion → Amps) and **Preamps** (EQ → Preamps): every amp and preamp the HX Stomp has, with its knobs;
 up to three per preset, together. No stock block is replaced. These builds also carry a small USB diagnostic

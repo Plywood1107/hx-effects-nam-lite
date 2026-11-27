@@ -571,6 +571,15 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
 - **Still to check:** our other hooks also share routines with stock ones (Click and Geiger with 0x102/0x127, Puggy
   with 0x216, Bethblahem with 0x832, Corrupt with 0x814, Ottobit with 0x23aa, Greasy with 0x225); no problem seen,
   but the stock blocks using those routines should be tried with nothing else in the preset.
+## 2026-11-27: input calibration, documentation only (branch `input-calibration`)
+
+`STOMP_DBU = 11.5` (the dBu that reaches 0 dBFS, from users' measurements of a Helix Floor and an HX Stomp) stays as
+it is: measuring it on the HX Effects needs a multimeter, which the user doesn't have, so Part C was cut to
+documentation (user, 2026-11-27). Line 6 publishes no maximum input level for the HX Effects. The comment in
+`tools/sharc/nam_lite.py` now says the figure is unmeasured here, that it assumes Input Level = Instrument, NAM's
+definition of input_level_dbu, and how to measure it later (the probe image's meter, branch `probe-build`, with
+`tools/input_level.py --volts`); `web/nam2ir-core.js` points at it; the README says what Input at 5.0 means. No
+value, kernel or image changed.
 
 ## Don'ts
 
