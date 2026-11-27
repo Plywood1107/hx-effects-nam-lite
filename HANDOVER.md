@@ -677,6 +677,50 @@ value, kernel or image changed.
   pre-cab one) and `web/recipe-amps-names.bin` made from them; the setup page offers Real names for NAM + Amps too;
   `fw-catalog.js` regenerated (amps 701 models).
 
+## 2026-11-26: the host probe (branch `probe-build`; for Part A step 0 and Part C's meter)
+
+One diagnostic image answers two questions: how much SDRAM the host gives a block, and the input's level for the NAM
+calibration. `python3 build.py full -- --hostprobe` → `build/HX_Effects_v3.80.0_NAM_Amps_Effects_HostProbe.hxf`: the
+full image with **Probe** in Drum Chapel's place (same host, the mono Ratchet: Delay → Mono → "Probe"; Drum Chapel
+is absent from this image). Its kernel (`effects/hostprobe`: C reference, tests, SHARC kernel bit for bit in ssim)
+reports as a data burst on its audio output, decoded by `tools/input_level.py` from a recording of the pedal's output:
+memwin reads the ARM's memory, not the DSP's, and no DSP-to-ARM path is known.
+
+- **Found offline first.** Every custom effect's graph is a copy of the 2048 IR block's graph with our primitive in
+  member 1, and that member asked for 0 SDRAM words: our hosts lend only their name, menu place and knobs. Stock
+  Ratchet's own graph asks for none either (its delay member, 0x9c64, has word 19 = 1, as every stock delay line
+  has; delay lines get their memory some other way, not studied). Stock models do ask for SDRAM through member word
+  15: 118 of 812, up to 191,488 words (Dynamic Bloom), and the mono effect harness's placeholder reserves 0x60400
+  words (394,240) a block slot. So the probe's member asks for 0x10000 words (65,536: a stock delay's order of size,
+  Heliosphere Mono asks 66,560).
+- **The frame** (`hostprobe.h`), every 3.02 s: 200 ms of a 6 kHz pilot, 34 words at 2.5 ms a bit (2 kHz a 0, 4 kHz
+  a 1), 100 ms of silence. Words: the call-list entry (DM(0..3, I3)), the instance struct (DM(0..15, DM(2, I3))),
+  an SDRAM memory test (only when words 6/7 give a block of the size asked for: it writes the block's first and last
+  word and checks them at every frame), the input meter's last one-second window (peak, sum of squares, sum), counts
+  and a checksum. Mode Report sends the burst instead of the input; Pass sends the input. Level sets the burst's peak.
+- **Checks:** `make -C effects test` (23 checks), `hostprobe_kernel.py --check` (377 instructions, 180 data words,
+  worst 987 cycles a call; with a block and without; three whole frames), `tools/input_level.py selftest` (the
+  reference's output through gain, noise, hum, DC, 44.1 kHz and a 40 ppm clock offset: every frame decoded, levels
+  within 0.01 dB). `kernel_rig` and the stub's check gained two opt-in hooks (a fixed host call-list entry, and a
+  reference setup with the host's words); the other kernels' checks are unchanged.
+- **Images:** the regular `build.py full` on this branch is byte-identical to the one on the unit (06fee4c9…). The
+  probe image is `a8a0311e65a519709e4e544c5248b06c`, verified ALL OK (verify_all checks the member's 0x10000 request),
+  not yet flashed. Drum Chapel's knob words land on the Probe's in presets that hold it (Pattern → Mode, Level →
+  Level), so such a preset plays the burst or the guitar. Afterwards reflash 06fee4c9.
+- **On the unit (2026-11-27): the host gives a block the SDRAM its member asks for.** Flashed a8a0311e (booted, no
+  fault); Probe alone in a preset, recorded as a phone voice memo near the amp; four frames decoded, all checksums
+  good. Instance struct (DM(2, I3)): `0x96e59 0x96eea 0x96e59 | 0xe1aa5 0xe1ab2 0xe1aa5 | 0x328c00 0x338c00 0x328c00
+  | 0x9b786 ×3 | 0xb2a08 ×3 | 0x30ff8a`: triples of (start, end, start) per arena, DM (0x91 words, as asked), PM
+  (0x0d), **SDRAM 0x328c00..0x338c00 = exactly 0x10000 words**, then two empty arenas. The memory test wrote the
+  block's first and last word and found them unchanged at every later frame (0 mismatches). Call-list entry
+  `0x294362 0x1 0x30fe87 0xe510b`. The input meter read the unplugged input's noise, about −96 dBFS peak.
+  So Drum Chapel can have its own SDRAM block: up to what the effect harness reserves per block slot (0x60400 words)
+  less the rest of its graph's needs (the probe proved 0x10000; larger is untested). It starts uninitialised (not
+  checked whether zeroed), and is per instance.
+- The normal full image (06fee4c9) was flashed back the same day: booted, no fault.
+- The decoder now divides each tone by its level in the recording: through a guitar speaker and a phone, 4 kHz
+  arrived about 20 dB and 6 kHz about 40 dB under 2 kHz, and the first decode found no frames.
+
 ## Don'ts
 
 - Don't change the MD5 check to force another firmware through; every offset above is for 3.80.0.

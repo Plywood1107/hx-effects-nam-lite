@@ -66,6 +66,8 @@ def main():
     if cabs not in ('all', 'none'):
         sys.exit('build.py: --cabs takes all or none')
     builder, verifier, amps, final = MODES[mode]
+    if '--hostprobe' in extra:                       # the diagnostic image keeps its own name
+        final += '_HostProbe'
     for script, image in REFS:
         if '--quick' in argv and os.path.isfile(os.path.join(HERE, image)):
             print(f'(--quick: using the existing {image})')

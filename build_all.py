@@ -32,6 +32,10 @@ and Geiger alone, build/HX_Effects_v3.80.0_All.hxf.
   ...,ottobit,syntax        Syntax instead of Doom Chug, on the same Pocket Fuzz slot (dropped: knob turns
                             locked the unit's interface beside Geiger or Ottobit).
   --meter                   the overlays report their cycle cost by sound (diagnostic image).
+  --hostprobe               the host probe (effects/hostprobe) in Drum Chapel's place, on the same host (the mono
+                            Ratchet, Delay > Mono > "Probe"), its graph member asking for 0x10000 SDRAM words:
+                            it reports the instance struct, an SDRAM memory test and an input meter as a data burst
+                            for tools/input_level.py (diagnostic image; build.py full -- --hostprobe).
                 With either, NAM keeps 2 slots but puts its d >= 17 rings in DDR2 too (nam_multi.py
                 --far-d 17), which frees Block 3 for the extra kernels; the Blob 0 buffer grows to
                 0x7b000 words (five host graphs) and NAM's DDR2 slots move up to 0x297400. Geiger,
@@ -55,7 +59,7 @@ TOOLS = os.path.join(HERE, 'tools')
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
           'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/probe/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc', 'effects/doomchug/sharc',
           'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc', 'effects/drumchapel', 'effects/bethblahem/sharc',
-          'effects/puggy/sharc'):
+          'effects/puggy/sharc', 'effects/hostprobe/sharc'):
     sys.path.insert(0, os.path.join(HERE, p))
 
 import build_click as bc  # noqa: E402
@@ -195,6 +199,10 @@ DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_par
     (9, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
 )
 assert len(DRUMCHAPEL_GROOVES) == 13 and len(DRUMCHAPEL_KITS) == 7
+HOSTPROBE_PARAMS = (    # slot 1 is Time with the tempo-sync pair, as Drum Chapel's (unused); the kernel reads words 6 and 13
+    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Mode', 'Mode', LIST, {0: 'Report', 1: 'Pass'}, 0),
+    (3, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.25),
+)
 PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
     (1, 5,  'HD2_FM4SynthOMatic', 'Wave', 'Mode', 'Mode', LIST,
      {0: 'Repeat', 1: 'Random', 2: 'Reverse', 3: 'Trigger', 4: 'Sq Trigger', 5: 'Square', 6: 'Up', 7: 'Down'}, 0),
@@ -238,6 +246,11 @@ EFFECTS = {
                        # Drum Chapel like any other delay (the Entry 3 field alone did not, 2026-11-18)
                        meta_drop=('followEnable', 'loadBypassed'), meta_type='digital',
                        plain_delay=True),   # block type 0x18 -> 0x08 and off the app's special-delay list (tools/special_delay_patch.py); what made the footswitch work on the unit   # Click's timing; grooves bank in Blob 0
+    # --hostprobe: a diagnostic in Drum Chapel's place, the same host and host changes; its member asks for SDRAM
+    'hostprobe': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayHostProbe', display='Probe', cost=700, prim=0x23AC,
+                      params=HOSTPROBE_PARAMS, entry='OVL_ENTRY_HOSTPROBE', sync=True,
+                      meta_drop=('followEnable', 'loadBypassed'), meta_type='digital', plain_delay=True,
+                      sdram=0x10000),   # = hostprobe.h HOSTPROBE_SDR_REQ; worst 987 cycles in ssim
     'purewhitey': dict(takeover='HD2_DistTycoctaviaFuzzMono', name='HD2_DistPureWhitey', display='Pure Whitey', cost=700, prim=0x2AAC,
                        params=PUREWHITEY_PARAMS, entry='OVL_ENTRY_PUREWHITEY'),   # worst 2,547 cycles in ssim; ring in DDR2
     # --probe: a diagnostic on Geiger's host instead of Geiger (effects/probe/sharc/probe_kernel.asm)
@@ -249,14 +262,14 @@ BLOB0_WORDS_OVL = 0x7E000              # six host graphs and the overlay payload
 # The overlays (one shared internal region, swapped in by ovl_stub_kernel); those with a DDR2 ring take RING_N x NSLOTS words
 # each, above NAM's slots, in this order. With more overlays than Ottobit, Blob 0's buffer takes all the DDR2 left below
 # DDR2_LIMIT (the old Heap 6 end, under the User IR store at 0x2a912c) after NAM's slots and the rings.
-OVERLAYS = ('ottobit', 'syntax', 'doomchug', 'purewhitey', 'greasy', 'drumchapel', 'bethblahem', 'puggy')
+OVERLAYS = ('ottobit', 'syntax', 'doomchug', 'purewhitey', 'greasy', 'drumchapel', 'hostprobe', 'bethblahem', 'puggy')
 # The cost the unit is told for each overlay effect (Entry 0 Table 1; NAM's DSP_COST scale). Alone an overlay needs
 # only its kernel (a few %), but with two or more in a preset each is copied in on every call: about 25 cycles a word
 # (meter, 2026-11-10: ~28,000 cycles for ~1,100 words, ~19 % of a call). At a flat 700 the unit let Commander + Doom
 # Chug + Drum Chapel + Pure Whitey into one preset and the DSP locked up (2026-11-18); a flat 2,300 was too strict
 # (user). So: about 300 for the kernel plus 1 per word copied in (code + data, this build's manifest), to the 50.
 OVL_COST = dict(ottobit=1300, syntax=1300, doomchug=900, bethblahem=1000, puggy=1000, greasy=1000, drumchapel=1550,
-                purewhitey=1100)
+                purewhitey=1100, hostprobe=1100)
 for _k in OVERLAYS:
     EFFECTS[_k]['cost'] = OVL_COST[_k]
 RING_OVERLAYS = ('ottobit', 'purewhitey')
@@ -496,6 +509,10 @@ def main():
     with_arg = argv[argv.index('--with') + 1] if '--with' in argv else None
     extras = [] if with_arg == 'none' or (probe and with_arg is None) else \
         with_arg.split(',') if with_arg else list(DEFAULT_EXTRAS)
+    if '--hostprobe' in argv:                            # the host probe in Drum Chapel's place
+        if 'drumchapel' not in extras:
+            sys.exit('build_all.py: --hostprobe takes Drum Chapel\'s place, and this set has no Drum Chapel')
+        extras = ['hostprobe' if k == 'drumchapel' else k for k in extras]
     known = [k for k in EFFECTS if k not in ('geiger', 'probe')]
     if any(k not in known for k in extras) or len(set(extras)) != len(extras) or ('corrupt' in extras and 'commander' not in extras) \
             or sum(EFFECTS[k]['takeover'] == t for k in extras for t in {EFFECTS[x]['takeover'] for x in extras}) != len(extras):
@@ -665,7 +682,7 @@ def main():
             probe_kernel.EXT['tail'] = (b0_len + 1) & ~1
             _, _, p_syms, _, _ = ks['probe'].assemble()
             pad = [0] * (probe_kernel.EXT['tail'] - b0_len) + probe_kernel.tail_words(p_syms)
-        e4n, blobs[k], comps[k] = pa.add_model_entry4(e4n, clone['blob_index'], params[k], 0, prim_id=EFFECTS[k]['prim'],
+        e4n, blobs[k], comps[k] = pa.add_model_entry4(e4n, clone['blob_index'], params[k], EFFECTS[k].get('sdram', 0), prim_id=EFFECTS[k]['prim'],
                                                       b0_pad=pad, **({'blob_fn': bc.click_host_blob} if EFFECTS[k].get('sync') else {}))
     print('[+] Entry 4: ' + ', '.join(f'{k} blob {blobs[k]} on {comps[k]:#x}' for k in blobs))
     w4 = struct.unpack('<%dI' % (len(e4n) // 4), e4n)
