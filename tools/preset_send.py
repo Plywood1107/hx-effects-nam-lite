@@ -313,7 +313,7 @@ LED = {'distortion': (0xd0af00, 0x080600), 'amp': (0xd0af00, 0x080600), 'preamp'
        'dynamics': (0x84ff00, 0x080c00), 'eq': (0x84ff00, 0x080c00),
        'modulation': (0x0032ff, 0x00040d), 'delay': (0x06ff00, 0x010900), 'reverb': (0xff2d00, 0x100400),
        'pitch': (0x3200ff, 0x03000b), 'synth': (0x3200ff, 0x03000b), 'filter': (0x3200ff, 0x03000b),
-       'wah': (0x3200ff, 0x03000b), 'ir': (0xff0028, 0x0b0007),
+       'wah': (0x3200ff, 0x03000b), 'ir': (0xff0028, 0x0b0007), 'cab': (0xff0003, 0x0b0000),
        'looper': (0x6bffce, 0x07100c), 'send': (0x6bffce, 0x07100c), 'return': (0x6bffce, 0x07100c),
        'fxloop': (0x6bffce, 0x07100c), 'volume': (0x6bffce, 0x07100c)}
 
@@ -401,6 +401,8 @@ def block_value(t, v):
 
 
 IR_TYPE = 19                     # IR blocks: no field 12, and field 27 = the MD5 (hex) of the IR in their slot
+CAB_TYPE = 15                    # legacy single cabs: the Mic (0..15) after the five knobs, counted in 2 but not in 3
+                                 # ({2: 6, 3: 5, 4: [Distance, LowCut, HighCut, EarlyReflections, Level, mic]}, 2026-11-27)
 
 
 # The loopers the unit stores in a short form of their own (block kind 7, every looper in the 115 saved presets,
@@ -429,6 +431,8 @@ def make_block(model, values=None, on=True, ir_md5=None):
             n3 -= 1
         else:
             vals.append(bool(values[len(ps_)]) if values and len(values) > len(ps_) else False)
+    if model['btype'] == CAB_TYPE:
+        vals.append(max(0, min(15, int(round(float(values[len(ps_)] or 0))))) if values and len(values) > len(ps_) else 0)
     blk = {24: {23: False, 25: model['pid'], 26: -1}, 9: model['btype'], 10: bool(on), 11: {2: len(vals), 3: n3, 4: vals}}
     if model['btype'] == IR_TYPE:
         if not ir_md5:

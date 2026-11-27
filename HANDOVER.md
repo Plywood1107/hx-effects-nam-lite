@@ -330,8 +330,15 @@ The Acoustic kit (not the cabs) also passed its listening test on this image: "t
 file reproduces its MD5), so NAM + Amps + Effects includes the cabs; the page's text says so (step 2 and step 6).
 `recipe-amps.bin` is unchanged (no cabs): an amps image with cabs has not been tested on the unit.
 
-**Not done:** the preset builder (`tools/preset-builder/make_catalog.js` regeneration for the 41 items, the cab
-block's Mic sub-slot, string 0x806, and an LED colour for the cab type); the amps recipe with cabs.
+**Preset builder (2026-11-27; the user tested a preset from it on the unit: "works on the unit"):** `fw-catalog.js`
+regenerated from the new recipes (full: 701 models, the 41 cabs category `cab`); a **Cab** group; the Mic as a list
+(`@mic`, 0..15 in the app's mic table order at 0x280f8abc: 57 Dynamic, 409, 421, 30, 20 Dynamic, 121, 160, 4038
+Ribbon, 414, 84, 67, 87, 47 Cond, 112, 12, 7 Dynamic), stored after the five knobs: `{2: 6, 3: 5, 4: [..., mic]}`,
+read from a preset the user saved on the unit (2A "Overlay Test 1": Soup Pro Ellipse mic 6, 1x15 Tuck n' Go mic 10).
+`preset-core.js` and `tools/preset_send.py` both write it; their cab blocks are byte for byte the unit's (59 bytes
+each), and `check_core.py` agrees on 400 random presets. At most two cabs per preset (the page refuses a third). The
+cab footswitch LED is a guess (0xff0003 on, as the unit stored; 0x0b0000 off): check it on the unit.
+**Not done:** the amps recipe with cabs.
 
 ## Open / next
 

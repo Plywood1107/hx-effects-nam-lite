@@ -100,7 +100,6 @@ reading the unit's log.
 - Only 3-channel A2 Lite captures fit.
 - Amps and preamps: three per preset at most, together.
 - Cabs: two cab blocks per preset (NAM + Amps + Effects only); no dual cabs.
-- The preset builder doesn't list the cabs yet: place them on the unit.
 - With one NAM in each path of a split, the bottom path is quieter.
 - Doom Chug's Chug knob does little except lower the level.
 
