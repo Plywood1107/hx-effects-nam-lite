@@ -29,6 +29,17 @@ IR_SAMPLES = 2048
 # Plugins", p.13, 2023), over USB/S/PDIF, not at the converter: a guess within
 # some 3 dB until it is measured on the unit. The kernel gives a model whose
 # file says its capture's input_level_dbu an input trim of STOMP_DBU - that.
+# Not measured on the HX Effects (decided 2026-11-27: no multimeter to hand), so
+# this stays the Stomp's figure, used as is: Line 6 publishes no maximum input
+# level for the HX Effects (only 1 MOhm, kb.line6.com "Helix Floor/Rack/LT/HX
+# Effects Input and Output Specs"); a Line 6 forum estimate for the Helix is about
+# +11 dBu with Input Level on Instrument, +19 dBu on Line. It assumes Global
+# Settings > Ins/Outs > Input Level = Instrument: on Line every capture would get
+# less drive (about 8 dB, if that estimate holds). NAM defines input_level_dbu as the
+# dBu of the RMS voltage of a sine whose peak is at 0 dBFS (its calibration
+# tutorial); to measure it, the probe image (branch probe-build, HANDOVER.md "the
+# host probe") reads the input's level, and tools/input_level.py --volts takes a
+# multimeter's reading of a 200 Hz sine at the input jack.
 STOMP_DBU = 11.5
 HIST_N = 512
 EQ_BANDS = (("low", 100.0), ("peak", 650.0), ("high", 2500.0), ("high", 5500.0))   # Bass Mid Treble Presence
