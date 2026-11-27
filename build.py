@@ -2,7 +2,7 @@
 """One command for each HX Effects build. Each builds the image, then checks it with the repo's verifier;
 only an image that ends "ALL OK" should be flashed.
 
-usage: python3 build.py nam|amps|full [--quick] [--flat-tuner] [--cabs all|none] [-- extra options for the builder]
+usage: python3 build.py nam|amps|full [--quick] [--flat-tuner] [--cabs all|none] [--real-names] [-- extra options for the builder]
 
   nam    NAM A2 Lite + Click                                   -> build/HX_Effects_v3.80.0_NAM.hxf
   amps   NAM A2 Lite + Click + 111 amps + 112 preamps + 41 cabs -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
@@ -18,6 +18,9 @@ one built before the cabs existed.
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
 Every image's tuner shows sharps (A#) instead of flats (Bb) (tools/tuner_sharps.py, checked); --flat-tuner keeps
 the stock flats.
+--real-names shows every block based on real gear under that gear's name (Mandarin Rocker as "OrangeRockerverb",
+Scream 808 as "Ibanez TS808"; tools/real_names.py, checked: only the names change). Off by default; the file name
+then ends _RealNames. Presets are unaffected: a preset stores its blocks by model, never by name.
 Before the build, build_effects.py and build_click.py make the single NAM and Click images the verifiers
 compare against; --quick skips them when they already exist. Options after -- go to the builder, e.g.
 `python3 build.py full -- --with commander` (fewer effects) or `python3 build.py nam -- --nam-host ir`.
@@ -99,6 +102,14 @@ def main():
         if 'ALL OK' not in log.splitlines()[-1]:
             sys.exit('\nbuild.py: the tuner patch FAILED its check: do not flash it.')
         out = os.path.join(HERE, log.splitlines()[-3].strip())
+    if '--real-names' in argv:                       # real-world names: tools/real_names.py
+        log = step(['tools/real_names.py', os.path.relpath(out, HERE)], quiet=True)
+        lines = log.splitlines()
+        print('\n'.join(ln for ln in lines if not ln.startswith('    ')))
+        if 'ALL OK' not in lines[-1]:
+            sys.exit('\nbuild.py: the real-names patch FAILED its check: do not flash it.')
+        out = os.path.join(HERE, lines[-3].strip())
+        final += '_RealNames'
     named = os.path.join(HERE, 'build', f'HX_Effects_v3.80.0_{final}.hxf')
     shutil.copyfile(out, named)
     out, rel = named, os.path.relpath(named, HERE)

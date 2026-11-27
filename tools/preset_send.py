@@ -307,9 +307,11 @@ def replace_node(blob, path, value):
 
 # A footswitch's LED colour by the block's category (firmware model meta "category"), (on, off): the unit stores the
 # lit colour while the block is on and a dim one while it is off, and HX Edit writes them the same way (every saved
-# preset on the unit, 2026-11-22). Amps and preamps take distortion's yellow; send/return, FX loop and volume take the
-# looper's white (the person's choice: no saved preset showed them).
-LED = {'distortion': (0xd0af00, 0x080600), 'amp': (0xd0af00, 0x080600), 'preamp': (0xd0af00, 0x080600),
+# preset on the unit, 2026-11-22). Amps and preamps: the unit's own red, (0xff0003, 0x0d0001), read from preset 1C saved on the
+# unit with one amp on and one off (2026-11-27; they were distortion's yellow before, so a preset loaded with yellow
+# amp LEDs until pressed). Send/return, FX loop and volume take the looper's white (the person's choice: no saved
+# preset showed them).
+LED = {'distortion': (0xd0af00, 0x080600), 'amp': (0xff0003, 0x0d0001), 'preamp': (0xff0003, 0x0d0001),
        'dynamics': (0x84ff00, 0x080c00), 'eq': (0x84ff00, 0x080c00),
        'modulation': (0x0032ff, 0x00040d), 'delay': (0x06ff00, 0x010900), 'reverb': (0xff2d00, 0x100400),
        'pitch': (0x3200ff, 0x03000b), 'synth': (0x3200ff, 0x03000b), 'filter': (0x3200ff, 0x03000b),
@@ -401,6 +403,7 @@ def block_value(t, v):
 
 
 IR_TYPE = 19                     # IR blocks: no field 12, and field 27 = the MD5 (hex) of the IR in their slot
+AMP_TYPE = 17                    # amps and preamps (block type 0x11): at most three in a preset, together
 CAB_TYPE = 15                    # legacy single cabs: the Mic (0..15) after the five knobs, counted in 2 but not in 3
                                  # ({2: 6, 3: 5, 4: [Distance, LowCut, HighCut, EarlyReflections, Level, mic]}, 2026-11-27)
 
@@ -661,6 +664,13 @@ def apply_controls(blob, spec, by_name):
 def build_preset(base, spec, by_name, ir_md5s=None):
     """A preset blob from a base blob (its blocks and footswitches cleared) and a SPEC dict (see the usage).
     ir_md5s: {IR slot: MD5 hex} of the unit's User IRs, for IR blocks (their first knob is the slot)."""
+    # the unit's own limits, as the preset builder enforces them: a preset over them loads with no blocks at all
+    # (2A on 2026-11-27: two amps and two preamps showed an empty preset)
+    kinds = [by_name.get(b['model'], {}).get('btype') for b in spec['blocks']]
+    if kinds.count(AMP_TYPE) > 3:
+        raise SystemExit(f'{kinds.count(AMP_TYPE)} amps/preamps: at most 3 in a preset, together')
+    if kinds.count(CAB_TYPE) > 2:
+        raise SystemExit(f'{kinds.count(CAB_TYPE)} cab blocks: at most 2 in a preset')
     _, body = parse_blob(base)
     blob = base
     for pos, blk in enumerate(body[0][22]):

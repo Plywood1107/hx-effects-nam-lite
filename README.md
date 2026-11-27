@@ -95,6 +95,16 @@ reading the unit's log.
 | Bam Crusher | Distortion → Mono (Bitcrusher) | Sequenced bit crusher with stutters |
 | Doom Chug | Distortion → Mono (Pocket Fuzz) | Low drone generator |
 
+**Real names** (optional, NAM + Amps + Effects on the setup page; any build with `build.py --real-names`): every block
+based on real gear shows that gear's name, as Line 6's HX Stomp 3.80 manual lists it in its "Based On" column:
+Mandarin Rocker becomes OrangeRockerverb, Scream 808 Ibanez TS808, 4x12 Uber V30 4x12 Bogner V30. Names stop at 16
+characters, the unit's limit. Where two blocks are based on the same gear (mostly a model and its Legacy version), the
+current one keeps the plain name and the other ends in B (Boss CE-1, Boss CE-1 B). Line 6 originals and this
+project's own effects keep their names. Only the names change, so presets work the same with or without it; tick
+Real names in the preset builder to match. A preset made before you switched keeps the names saved in it (its footswitch labels): reload the block, or open it in the preset builder with Real names ticked and send it back. The full table is in `tools/real_names.py`. The product names are
+trademarks of their owners, used only to say which gear each Line 6 model is based on; none of them is associated
+with or endorses this project or Line 6's models.
+
 ## Limits
 
 - HX Edit can't edit NAM, the amps, the cabs or the effects ("code −8200"): use the unit or the preset builder. IR
@@ -142,8 +152,8 @@ Python 3.10+ and `make` with a C compiler (`xcode-select --install` on a Mac, `b
    pip install numpy unicorn==2.1.4 capstone==5.0.9 pyusb libusb-package
    ```
 4. **Build**: `python build.py nam`, `amps` or `full` (NAM + Amps + Effects), into `build/`. It takes a few
-   minutes (the full one about ten) and prints the MD5 and the flash command. Flash only an image that ends
-   `verified ALL OK`.
+   minutes (the full one about ten) and prints the MD5 and the flash command. Add `--real-names` for the real gear
+   names (the file name then ends `_RealNames`). Flash only an image that ends `verified ALL OK`.
 5. **Back up** your presets and IRs in HX Edit, then close HX Edit.
 6. **Flash** with Line 6 Updater (**Choose File** → your image), or `python tools/flash.py flash build/<image>.hxf`
    (type `flash` to confirm; it waits for the unit to boot, about two minutes).

@@ -640,6 +640,38 @@ definition of input_level_dbu, and how to measure it later (the probe image's me
 `tools/input_level.py --volts`); `web/nam2ir-core.js` points at it; the README says what Input at 5.0 means. No
 value, kernel or image changed.
 
+## 2026-11-27: Real names (`build.py --real-names`, `tools/real_names.py`)
+
+- **What:** every block based on real gear shows that gear's name (Mandarin Rocker -> OrangeRockerverb). Off by
+  default. The table (Line 6 name -> real name, 16 characters at most) follows the "Based On" column of Line 6's HX
+  Stomp 3.80 Owner's Manual (amps, legacy cabs, effects), checked against it 2026-11-27; the user approved it. Two
+  blocks on the same gear: the current one keeps the plain name, the other ends in B (`REPEATS`).
+- **How:** only two places in Entry 0, the same ones the takeovers rename: Table 2's 16-byte name (row bytes 4..19)
+  and every menu item's name (bytes 14..39). Presets store model and preset id, not names. A block is renamed only
+  while its menu still shows the Line 6 name, so our takeovers (Bolt, Rocket!, NAM A2 Lite, ...) keep theirs. Menu
+  names decide; Table 2's are often cut short ("Mandarin Bass 20", menu forms like "Compulsive Drv" are in `SHORT`)
+  and four cab rows (1x12 Cali IV, Cali EXT, both Del Sols) carry "4x12 SoloLead EM", in Table 2 and in Entry 3's
+  model data both. The check: only Entry 0's name bytes differ from the verified base; every renamed block shows its
+  real name everywhere; no listed Line 6 name left; 16 characters; no two different blocks with the same name.
+- `build.py --real-names` runs it last (after the tuner) and names the file `..._RealNames.hxf`. All three builds
+  pass. `tools/real_names.py --js` writes `tools/preset-builder/real-names.js` (the builder's Real names box; also the
+  cabs' menu names, so the builder no longer lists four cabs as "4x12 SoloLead EM").
+- Setup page: a Real names box, offered only for builds in `REAL_NAMES_OK` (NAM + Amps + Effects), which needs
+  `web/recipe-full-names.bin` made from the image tested on the unit.
+- `build.py full --real-names` (2026-11-27): base rebuilt byte for byte as the released 930bc33e; the real-names
+  image is **09cc4345bd1e68cd798824f7f4d86969**, verified ALL OK (only names differ from 930bc33e). **On the unit
+  2026-11-27 (flashed with tools/flash.py): works**; a block reloaded shows its real name. Old presets keep their
+  saved footswitch labels (a preset stores each label as text: 1C has "Kinky Boost", "Transistor Tape"): reload the
+  block, or re-send from the preset builder with Real names ticked (it writes labels from the current names).
+  `web/recipe-full-names.bin` made from it (rebuilds 09cc4345 from stock).
+- **Amp and preamp footswitch LEDs** (same day): they were distortion's yellow (a guess), so a builder preset loaded
+  with yellow amp LEDs and the unit's red only after a press. The unit's own: (0xff0003 on, 0x0d0001 off), read from
+  1C saved on the unit with one amp on and one off; the cab's on colour is the same, its off 0x0b0000. Now in
+  `preset-core.js` and `preset_send.py` LED (check_core: 400 of 400 agree). On the unit (2A test, restored after): right.
+- **A preset over the limits loads empty**: two amps + two preamps showed no blocks at all. `preset_send.py build` now
+  refuses more than 3 amps/preamps or 2 cabs, as the builder does. Its default footswitch labels come from Entry 3's
+  displayName (Line 6's names, which real names doesn't change); pass "label" for real names.
+
 ## Don'ts
 
 - Don't change the MD5 check to force another firmware through; every offset above is for 3.80.0.
