@@ -543,6 +543,19 @@ memwin reads the ARM's memory, not the DSP's, and no DSP-to-ARM path is known.
   probe image is `a8a0311e65a519709e4e544c5248b06c`, verified ALL OK (verify_all checks the member's 0x10000 request),
   not yet flashed. Drum Chapel's knob words land on the Probe's in presets that hold it (Pattern → Mode, Level →
   Level), so such a preset plays the burst or the guitar. Afterwards reflash 06fee4c9.
+- **On the unit (2026-11-27): the host gives a block the SDRAM its member asks for.** Flashed a8a0311e (booted, no
+  fault); Probe alone in a preset, recorded as a phone voice memo near the amp; four frames decoded, all checksums
+  good. Instance struct (DM(2, I3)): `0x96e59 0x96eea 0x96e59 | 0xe1aa5 0xe1ab2 0xe1aa5 | 0x328c00 0x338c00 0x328c00
+  | 0x9b786 ×3 | 0xb2a08 ×3 | 0x30ff8a`: triples of (start, end, start) per arena, DM (0x91 words, as asked), PM
+  (0x0d), **SDRAM 0x328c00..0x338c00 = exactly 0x10000 words**, then two empty arenas. The memory test wrote the
+  block's first and last word and found them unchanged at every later frame (0 mismatches). Call-list entry
+  `0x294362 0x1 0x30fe87 0xe510b`. The input meter read the unplugged input's noise, about −96 dBFS peak.
+  So Drum Chapel can have its own SDRAM block: up to what the effect harness reserves per block slot (0x60400 words)
+  less the rest of its graph's needs (the probe proved 0x10000; larger is untested). It starts uninitialised (not
+  checked whether zeroed), and is per instance.
+- The normal full image (06fee4c9) was flashed back the same day: booted, no fault.
+- The decoder now divides each tone by its level in the recording: through a guitar speaker and a phone, 4 kHz
+  arrived about 20 dB and 6 kHz about 40 dB under 2 kHz, and the first decode found no frames.
 
 ## Don'ts
 

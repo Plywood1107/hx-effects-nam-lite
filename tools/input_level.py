@@ -92,12 +92,14 @@ class Tones:
         return np.abs(self.c[f][b] - self.c[f][a]) ** 2
 
 
-def bits_at(tn, start, sps, nbits):
-    """The bits of nbits symbols from sample `start` (float), each judged on its middle 60%, and their margins."""
+def bits_at(tn, start, sps, nbits, gain=None):
+    """The bits of nbits symbols from sample `start` (float), each judged on its middle 60%, and their margins.
+    gain: each tone's level in the recording (a speaker and a phone's mic roll the high tones off), to divide by."""
     k = np.arange(nbits)
     a = np.round(start + (k + 0.2) * sps).astype(np.int64)
     b = np.round(start + (k + 0.8) * sps).astype(np.int64)
-    p0, p1 = tn.power(F0, a, b), tn.power(F1, a, b)
+    g = gain or {F0: 1.0, F1: 1.0}
+    p0, p1 = tn.power(F0, a, b) / g[F0], tn.power(F1, a, b) / g[F1]
     return (p1 > p0).astype(np.uint8), np.abs(p1 - p0) / (p1 + p0 + 1e-30)
 
 
@@ -123,7 +125,11 @@ def decode(x, rate):
     pp, p0, p1 = (tn.power(f, starts, starts + L) for f in (FP, F0, F1))
     if not len(starts) or pp.max() <= 0:
         return []
-    pilot = (pp > 4 * (p0 + p1)) & (pp > 0.05 * pp.max())
+    # each tone's level where it sounds (its 98th percentile): the path to the recording may weaken one tone by
+    # tens of dB against another (a guitar speaker and a phone: 4 kHz 20 dB and 6 kHz 40 dB under 2 kHz)
+    gain = {f: max(float(np.percentile(p, 98)), 1e-30) for f, p in ((FP, pp), (F0, p0), (F1, p1))}
+    pp, p0, p1 = pp / gain[FP], p0 / gain[F0], p1 / gain[F1]
+    pilot = (pp > 4 * (p0 + p1)) & (pp > 0.05)
     frames, i = [], 0
     while i < len(pilot):
         if not pilot[i]:
@@ -138,14 +144,14 @@ def decode(x, rate):
         edge = starts[j - 1] + L                                 # about where the pilot stops
         best = None                                              # the sync word, up to 4 bits wrong (an echo, a
         for d in range(-L, L + 1, max(1, L // 40)):              # phone's codec); the checksum guards the frame
-            bits, m = bits_at(tn, edge + d, sps, 32)
+            bits, m = bits_at(tn, edge + d, sps, 32, gain)
             wrong = bin(words_of(bits)[0] ^ SYNC).count('1')
             if wrong <= 4:
                 score = (-wrong, float(m.mean()))
                 if best is None or score > best[0]:
                     best = (score, edge + d)
         if best is not None:
-            bits, _ = bits_at(tn, best[1], sps, NBITS)
+            bits, _ = bits_at(tn, best[1], sps, NBITS, gain)
             w = words_of(bits)
             if len(w) == NWORDS and w[0] == SYNC and w[33] == sum(w[1:33]) & 0xFFFFFFFF:
                 frames.append(w)
