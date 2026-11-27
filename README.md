@@ -25,19 +25,17 @@ uploaded.
 
 <table>
 <tr>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/"><img src="docs/images/setup-page.jpg" alt="The setup page"></a><br>
 <b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/">Setup page</a></b>: makes the firmware from Line 6's
 file, installs it over USB, and converts and sends your NAM captures.
 </td>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/"><img src="docs/images/preset-builder.jpg" alt="The preset builder"></a><br>
 <b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/">Preset builder</a></b>: builds presets
 with NAM, the amps and the effects (HX Edit can't) and sends them to the unit.
 </td>
-</tr>
-<tr>
-<td colspan="2" valign="top">
+<td width="33%" valign="top">
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/groove-editor/"><img src="docs/images/groove-editor.jpg" alt="The groove editor"></a><br>
 <b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/groove-editor/">Groove editor</a></b>: designs up to 20
 drum patterns for Drum Chapel in any time signature, sixteenth by sixteenth, previews them with the unit's kits, takes
