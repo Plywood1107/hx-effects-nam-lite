@@ -6,7 +6,7 @@
 # flasher.js one folder up on the site), so the site is now assembled here instead, one commit on top of gh-pages.
 set -e
 cd "$(git rev-parse --show-toplevel)"
-BUILDER="index.html preset-core.js fw-reader.js fw-catalog.js README.md"
+BUILDER="index.html preset-core.js fw-reader.js fw-catalog.js real-names.js README.md"
 EDITOR="index.html groove-core.js beats.js"            # and every file in tools/groove-editor/sounds/
 
 idx="$(mktemp -d)/index"
