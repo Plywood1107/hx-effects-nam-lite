@@ -18,7 +18,7 @@ through the Bolt, Rocket!, Quality Polis, Garrrry Tank or Bam Crusher effects. P
 
 ## Get started
 
-Two pages do everything in your browser (Chrome or Edge, Mac or Windows). Nothing is installed and nothing is
+Three pages do everything in your browser (Chrome or Edge, Mac or Windows). Nothing is installed and nothing is
 uploaded.
 
 **[▶ Video tutorial](https://www.youtube.com/watch?v=yktLS1vPSZ4)**: how to set it up and run it, step by step.
@@ -34,6 +34,14 @@ file, installs it over USB, and converts and sends your NAM captures.
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/"><img src="docs/images/preset-builder.jpg" alt="The preset builder"></a><br>
 <b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/">Preset builder</a></b>: builds presets
 with NAM, the amps and the effects (HX Edit can't) and sends them to the unit.
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+<a href="https://scottlynn73.github.io/hx-effects-nam-lite/groove-editor/"><img src="docs/images/groove-editor.jpg" alt="The groove editor"></a><br>
+<b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/groove-editor/">Groove editor</a></b>: designs up to 20
+drum patterns for Drum Chapel in any time signature, sixteenth by sixteenth, previews them with the unit's kits, takes
+MIDI loops, and sends them to the unit (the Groove knob's User setting).
 </td>
 </tr>
 </table>

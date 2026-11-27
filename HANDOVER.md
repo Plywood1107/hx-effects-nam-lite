@@ -528,9 +528,11 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
   kit's sounds as the reference makes them (`make -C effects kit-sounds` renders the 56 one-shots into
   `tools/groove-editor/sounds/`), your own hits for previewing, MIDI import (`groove-core.js`, byte for byte
   `grooves.py`: `tools/groove-editor/check_core.py`), .json save/open, the slot's .wav, and Send to unit (slot 128
-  over WebUSB, as the setup page sends IRs). Twenty starting points in `beats.js`, written for this project after
-  the feel of well-known drum parts (Back in Black, No One Knows, Smells Like Teen Spirit, Scentless Apprentice,
-  Enter Sandman, Firestarter, New Noise, ...) and a few odd meters: no transcriptions, no MIDI or audio from anyone.
+  over WebUSB, as the setup page sends IRs). Twenty starting points in `beats.js`, written for this project and
+  named for their feel (rock, metal, punk, breakbeat, a toms fill, a few odd meters): no MIDI or audio from anyone.
+- **Test image** (`build.py full --quick`, kept as `build/HX_Effects_v3.80.0_NAM_Amps_Effects_UserGrooves.hxf`):
+  MD5 4722479f79bbc85860c3b5cd94edba83, verified ALL OK; flashed 2026-11-27, booted, no fault. Tested on the unit
+  2026-11-27: the editor's Send to unit writes slot 128 and Drum Chapel's User groove plays the patterns as sent.
 - Still to do: the Acoustic kit repack (five voices), user kits, an image with all of it (ask before flashing), the
   preset builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
 
