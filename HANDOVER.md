@@ -671,6 +671,11 @@ value, kernel or image changed.
 - **A preset over the limits loads empty**: two amps + two preamps showed no blocks at all. `preset_send.py build` now
   refuses more than 3 amps/preamps or 2 cabs, as the builder does. Its default footswitch labels come from Entry 3's
   displayName (Line 6's names, which real names doesn't change); pass "label" for real names.
+- **Cabs in NAM + Amps** (same day): `build.py amps` (cabs by default) gives **b03dd0f9aff790d59ac09525aa903c69** and
+  with `--real-names` **e41ac37bf27663e1b3e6a7b6cfe57d84**, both verified ALL OK and tested on the unit (cabs in both
+  paths, knobs, Mic, third cab refused, bypass, save/recall; plain: NAM plays). `web/recipe-amps.bin` (replacing the
+  pre-cab one) and `web/recipe-amps-names.bin` made from them; the setup page offers Real names for NAM + Amps too;
+  `fw-catalog.js` regenerated (amps 701 models).
 
 ## Don'ts
 

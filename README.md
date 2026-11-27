@@ -9,8 +9,8 @@ This repo adds amp and cab modelling to the Line 6 HX Effects:
 - **Line 6's own 111 HX Stomp amps and 112 preamps** now run on the device. They were already in the firmware but
   never listed: there's a new Amps group under Distortion and a Preamps group under EQ.
 - **Line 6's own 41 HX Stomp legacy cabs**, also already in the firmware, in a new Cabs group under EQ, with Mic,
-  Distance and the rest: up to two per preset, so a cab after NAM or an amp in each path (NAM + Amps + Effects
-  build).
+  Distance and the rest: up to two per preset, so a cab after NAM or an amp in each path (NAM + Amps and NAM + Amps
+  + Effects builds).
 
 If you want them, it also adds some frankly pretty daft noisy effects for those who like to make sounds that bear no
 resemblance to guitars: glitchy, stuttering, pure boggin' sounds only a twisted person like me could appreciate. The
@@ -63,8 +63,8 @@ Prefer a terminal? The same firmware can be built and flashed from this repo: se
 | Build | What's in it |
 |---|---|
 | **NAM** | NAM A2 Lite, Click (metronome) |
-| **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps |
-| **NAM + Amps + Effects** | the above + the HX Stomp's 41 legacy cabs (EQ → Cabs) + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel (a drum machine) and more |
+| **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps + its 41 legacy cabs (EQ → Cabs) |
+| **NAM + Amps + Effects** | the above + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel (a drum machine) and more |
 
 **NAM A2 Lite** (Distortion → Mono, in place of the mono Regal Bass DI): up to three per preset (two in NAM + Amps +
 Effects). Model picks the User IR slot holding the capture (1–21); Input ±20 dB; Bass, Mid, Treble and Presence
@@ -76,12 +76,11 @@ Global Settings → Input Level on Instrument. If a capture feels too clean or t
 **Amps** (Distortion → Amps) and **Preamps** (EQ → Preamps): every amp and preamp the HX Stomp has, with its knobs;
 up to three per preset, together. No stock block is replaced.
 
-**Cabs** (EQ → Cabs, NAM + Amps + Effects): the HX Stomp's 41 legacy cabs, each with Mic, Distance, Low Cut, High
+**Cabs** (EQ → Cabs, NAM + Amps and NAM + Amps + Effects): the HX Stomp's 41 legacy cabs, each with Mic, Distance, Low Cut, High
 Cut, Early Reflections and Level; up to two cab blocks per preset (say one in each path). No dual cabs: the HX
 Effects has no screen to choose a dual's second cab. The new-style cabs and the Amp+Cab blocks are not included:
-their sound data isn't in this firmware. In NAM + Amps, put an IR block after the amp, with a cab IR in a User IR
-slot. (From a terminal, `build.py amps` adds the cabs too, but that image hasn't been tested on a unit: use
-`--cabs none` to leave them out.) The amp builds also carry a small USB diagnostic interface (`tools/memwin.py`) for
+their sound data isn't in this firmware; for one of those, put an IR block after the amp, with a cab IR in a User IR
+slot. `build.py amps --cabs none` leaves the cabs out. The amp builds also carry a small USB diagnostic interface (`tools/memwin.py`) for
 reading the unit's log.
 
 **Effects**: each takes over the stock block in brackets (any stereo version stays).
@@ -95,7 +94,8 @@ reading the unit's log.
 | Bam Crusher | Distortion → Mono (Bitcrusher) | Sequenced bit crusher with stutters |
 | Doom Chug | Distortion → Mono (Pocket Fuzz) | Low drone generator |
 
-**Real names** (optional, NAM + Amps + Effects on the setup page; any build with `build.py --real-names`): every block
+**Real names** (optional, NAM + Amps and NAM + Amps + Effects on the setup page; any build with
+`build.py --real-names`): every block
 based on real gear shows that gear's name, as Line 6's HX Stomp 3.80 manual lists it in its "Based On" column:
 Mandarin Rocker becomes OrangeRockerverb, Scream 808 Ibanez TS808, 4x12 Uber V30 4x12 Bogner V30. Names stop at 16
 characters, the unit's limit. Where two blocks are based on the same gear (mostly a model and its Legacy version), the
@@ -112,7 +112,7 @@ with or endorses this project or Line 6's models.
 - NAM's Model knob reaches User IR slots 1–21. Presets store the slot number, not the capture.
 - Only 3-channel A2 Lite captures fit.
 - Amps and preamps: three per preset at most, together.
-- Cabs: two cab blocks per preset (NAM + Amps + Effects only); no dual cabs.
+- Cabs: two cab blocks per preset; no dual cabs.
 - With one NAM in each path of a split, the bottom path is quieter.
 - Doom Chug's Chug knob does little except lower the level.
 
