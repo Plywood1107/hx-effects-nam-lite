@@ -9,11 +9,11 @@ CFLAGS ?= -std=c99 -O2 -ffp-contract=off -Wall -Wextra -Wpedantic -Werror -Wshad
 LDLIBS = -lm
 
 COMMON = common/fx.c common/wav.c common/signals.c
-EFFECTS = geiger/geiger.c metronome/metronome.c commander/commander.c corrupt/corrupt.c ottobit/ottobit.c stutter/stutter.c syntax/syntax.c grains/grains.c sequence/sequence.c warp/warp.c doomchug/doomchug.c bethblahem/bethblahem.c puggy/puggy.c greasy/greasy.c drumchapel/drumchapel.c purewhitey/purewhitey.c
-HEADERS = common/*.h geiger/*.h metronome/*.h commander/*.h corrupt/*.h ottobit/*.h stutter/*.h syntax/*.h grains/*.h sequence/*.h warp/*.h doomchug/*.h bethblahem/*.h puggy/*.h greasy/*.h drumchapel/*.h purewhitey/*.h
+EFFECTS = geiger/geiger.c metronome/metronome.c commander/commander.c corrupt/corrupt.c ottobit/ottobit.c stutter/stutter.c syntax/syntax.c grains/grains.c sequence/sequence.c warp/warp.c doomchug/doomchug.c bethblahem/bethblahem.c puggy/puggy.c greasy/greasy.c drumchapel/drumchapel.c purewhitey/purewhitey.c hostprobe/hostprobe.c
+HEADERS = common/*.h geiger/*.h metronome/*.h commander/*.h corrupt/*.h ottobit/*.h stutter/*.h syntax/*.h grains/*.h sequence/*.h warp/*.h doomchug/*.h bethblahem/*.h puggy/*.h greasy/*.h drumchapel/*.h purewhitey/*.h hostprobe/*.h
 OUT = out
 
-all: $(OUT)/fxrender $(OUT)/test_geiger $(OUT)/test_metronome $(OUT)/test_commander $(OUT)/test_corrupt $(OUT)/test_ottobit $(OUT)/test_stutter $(OUT)/test_syntax $(OUT)/test_grains $(OUT)/test_sequence $(OUT)/test_warp $(OUT)/test_doomchug $(OUT)/test_bethblahem $(OUT)/test_puggy $(OUT)/test_greasy $(OUT)/test_drumchapel $(OUT)/test_purewhitey
+all: $(OUT)/fxrender $(OUT)/test_geiger $(OUT)/test_metronome $(OUT)/test_commander $(OUT)/test_corrupt $(OUT)/test_ottobit $(OUT)/test_stutter $(OUT)/test_syntax $(OUT)/test_grains $(OUT)/test_sequence $(OUT)/test_warp $(OUT)/test_doomchug $(OUT)/test_bethblahem $(OUT)/test_puggy $(OUT)/test_greasy $(OUT)/test_drumchapel $(OUT)/test_purewhitey $(OUT)/test_hostprobe
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -66,6 +66,9 @@ $(OUT)/test_greasy: greasy/test_greasy.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT
 $(OUT)/test_puggy: puggy/test_puggy.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -o $@ puggy/test_puggy.c $(COMMON) $(EFFECTS) $(LDLIBS)
 
+$(OUT)/test_hostprobe: hostprobe/test_hostprobe.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ hostprobe/test_hostprobe.c $(COMMON) $(EFFECTS) $(LDLIBS)
+
 $(OUT)/test_bethblahem: bethblahem/test_bethblahem.c $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -o $@ bethblahem/test_bethblahem.c $(COMMON) $(EFFECTS) $(LDLIBS)
 
@@ -92,6 +95,7 @@ sharc-check: $(OUT)/libfx.so
 	../.venv/bin/python3 greasy/sharc/greasy_kernel.py --check --seconds 0.25
 	../.venv/bin/python3 puggy/sharc/puggy_kernel.py --check --seconds 0.25
 	../.venv/bin/python3 bethblahem/sharc/bethblahem_kernel.py --check --seconds 0.25
+	../.venv/bin/python3 hostprobe/sharc/hostprobe_kernel.py --check --seconds 0.25
 
 test: all
 	$(OUT)/test_geiger geiger/golden.txt
@@ -116,6 +120,8 @@ test: all
 	$(OUT)/fxrender describe puggy | diff -u puggy/params.json - && echo "puggy params.json up to date"
 	$(OUT)/test_bethblahem
 	$(OUT)/fxrender describe bethblahem | diff -u bethblahem/params.json - && echo "bethblahem params.json up to date"
+	$(OUT)/test_hostprobe
+	$(OUT)/fxrender describe hostprobe | diff -u hostprobe/params.json - && echo "hostprobe params.json up to date"
 	$(OUT)/fxrender describe warp | diff -u warp/params.json - && echo "warp params.json up to date"
 	$(OUT)/fxrender describe sequence | diff -u sequence/params.json - && echo "sequence params.json up to date"
 	$(OUT)/fxrender describe grains | diff -u grains/params.json - && echo "grains params.json up to date"

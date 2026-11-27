@@ -16,11 +16,12 @@ extern const FxAlgorithm fx_purewhitey;
 extern const FxAlgorithm fx_drumchapel;
 extern const FxAlgorithm fx_greasy;
 extern const FxAlgorithm fx_puggy;
+extern const FxAlgorithm fx_hostprobe;
 extern const FxAlgorithm fx_bethblahem;
 extern const FxAlgorithm fx_geiger;
 extern const FxAlgorithm fx_metronome;
 
-static const FxAlgorithm *const ALL[] = { &fx_commander, &fx_corrupt, &fx_geiger, &fx_metronome, &fx_ottobit, &fx_stutter, &fx_syntax, &fx_grains, &fx_sequence, &fx_warp, &fx_doomchug, &fx_bethblahem, &fx_puggy, &fx_greasy, &fx_drumchapel, &fx_purewhitey };
+static const FxAlgorithm *const ALL[] = { &fx_commander, &fx_corrupt, &fx_geiger, &fx_metronome, &fx_ottobit, &fx_stutter, &fx_syntax, &fx_grains, &fx_sequence, &fx_warp, &fx_doomchug, &fx_bethblahem, &fx_puggy, &fx_greasy, &fx_drumchapel, &fx_purewhitey, &fx_hostprobe };
 
 const FxAlgorithm *const *fx_all(size_t *n)
 {

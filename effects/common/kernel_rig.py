@@ -121,6 +121,7 @@ class Reference:
         # mode would change this process's other float arithmetic (an image build's, say)
         assert self.lib.fx_set_ftz(0) == 1, 'cannot flush denormals to zero here (as the SHARC does)'
         self.alg = FxAlgorithm.in_dll(self.lib, f'fx_{spec.name}')
+        self.setup = getattr(spec, 'ref_setup', None)    # gives the reference what the kernel reads from the host
         assert self.alg.n_params == len(self.order)
 
     def new(self):
@@ -130,6 +131,8 @@ class Reference:
             self.alg.reset(st, SR)
         finally:
             self.lib.fx_set_ftz(0)
+        if self.setup:
+            self.setup(self.lib, st)
         return st
 
     def process(self, st, knobs, block):
@@ -206,6 +209,8 @@ class Rig:
         for b, v in ((0x40, i0), (0x41, BI), (0x42, BO)):
             sim.set(b, v)
         sim.set(0x13, rnd.getrandbits(32) & 0xFFFFF)
+        if getattr(sp, 'i3', None) is not None:          # a kernel that reads the host's call-list entry (hostprobe)
+            sim.set(0x13, sp.i3)
         sim.u[ssim.U_MODE1] |= 0x1000000
         mode1 = sim.u[ssim.U_MODE1]
         before = ([sim.R(r) for r in range(16)], list(sim.alt[:16]), {c: sim.get(c) for c in self.KEEP})

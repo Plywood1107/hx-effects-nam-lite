@@ -24,7 +24,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 for p in ('tools', 'tools/sharc', 'effects/metronome/sharc', 'effects/geiger/sharc', 'effects/common',
           'effects/commander/sharc', 'effects/corrupt/sharc', 'effects/ottobit/sharc', 'effects/syntax/sharc',
           'effects/doomchug/sharc', 'effects/purewhitey/sharc', 'effects/greasy/sharc', 'effects/drumchapel/sharc',
-          'effects/drumchapel', 'effects/bethblahem/sharc', 'effects/puggy/sharc', '.'):
+          'effects/drumchapel', 'effects/bethblahem/sharc', 'effects/puggy/sharc', 'effects/hostprobe/sharc', '.'):
     sys.path.insert(0, os.path.join(ROOT, p))
 os.environ['NAM_DEVICE'] = 'effects'
 import build_all  # noqa: E402
@@ -204,6 +204,11 @@ order = ['nam', 'click'] + FX
 for cid in range(0x6001c1, 0x6001c1 + len(order)):
     hdr = b0[ctab + 7 * (cid - 0x600000): ctab + 7 * (cid - 0x600000) + 7]
     prims[cid] = b0[hdr[3] + 20 + 6]
+    sdr = b0[hdr[3] + 20 + 15]
+    who = order[cid - 0x6001c1]
+    want_sdr = build_all.EFFECTS[who].get('sdram', 0) if who in build_all.EFFECTS else 0
+    if want_sdr or sdr:                              # only the host probe's member asks for SDRAM
+        check(sdr == want_sdr, f'  {who}: its member asks for {sdr:#x} SDRAM words ({want_sdr:#x})')
 want = {0x6001c1 + j: man[k]['primitive'] for j, k in enumerate(order)}
 check(prims == want, f'Blob 0 host composites on primitives { {hex(k): hex(v) for k, v in prims.items()} }')
 if OVL:
