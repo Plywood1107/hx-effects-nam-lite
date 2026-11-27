@@ -337,7 +337,7 @@ Ribbon, 414, 84, 67, 87, 47 Cond, 112, 12, 7 Dynamic), stored after the five kno
 read from a preset the user saved on the unit (2A "Overlay Test 1": Soup Pro Ellipse mic 6, 1x15 Tuck n' Go mic 10).
 `preset-core.js` and `tools/preset_send.py` both write it; their cab blocks are byte for byte the unit's (59 bytes
 each), and `check_core.py` agrees on 400 random presets. At most two cabs per preset (the page refuses a third). The
-cab footswitch LED is a guess (0xff0003 on, as the unit stored; 0x0b0000 off): check it on the unit.
+cab footswitch LED (0xff0003 on, as the unit stored; 0x0b0000 off) looks right on the unit (user, 2026-11-27).
 **Not done:** the amps recipe with cabs.
 
 ## Open / next
