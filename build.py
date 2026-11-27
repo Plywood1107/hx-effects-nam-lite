@@ -2,15 +2,18 @@
 """One command for each HX Effects build. Each builds the image, then checks it with the repo's verifier;
 only an image that ends "ALL OK" should be flashed.
 
-usage: python3 build.py nam|amps|full [--quick] [--flat-tuner] [-- extra options for the builder]
+usage: python3 build.py nam|amps|full [--quick] [--flat-tuner] [--cabs all|none] [-- extra options for the builder]
 
   nam    NAM A2 Lite + Click                                   -> build/HX_Effects_v3.80.0_NAM.hxf
-  amps   NAM A2 Lite + Click + 111 amps + 112 preamps          -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
+  amps   NAM A2 Lite + Click + 111 amps + 112 preamps + 41 cabs -> build/HX_Effects_v3.80.0_NAM_Amps.hxf
   full   NAM A2 Lite + Click + amps + preamps + the effects     -> build/HX_Effects_v3.80.0_NAM_Amps_Effects.hxf
          (Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel, ...)
 
 nam and amps use build_nam_click.py --nam-host regal, full uses build_all.py; amps and full then add the amps
-and preamps (build_amps.py --set all --preamps all: Distortion > Amps, EQ > Preamps; checked by tools/verify_amps.py, with the USB log reader tools/memwin.py).
+and preamps (build_amps.py --set all --preamps all: Distortion > Amps, EQ > Preamps; checked by tools/verify_amps.py, with the USB log reader tools/memwin.py),
+then the 41 legacy single cabs (--cabs all: EQ > Cabs, two cab blocks per preset; checked by
+tools/verify_cabs.py against the amps image). --cabs none leaves them out: the image is then byte for byte the
+one built before the cabs existed.
 
 NAM sits on the mono Regal Bass DI (Distortion > Mono) in both, so a cab IR can follow it.
 Every image's tuner shows sharps (A#) instead of flats (Bb) (tools/tuner_sharps.py, checked); --flat-tuner keeps
@@ -56,6 +59,9 @@ def main():
     if not argv or argv[0] not in MODES or '-h' in argv or '--help' in argv:
         sys.exit(__doc__)
     mode = argv[0]
+    cabs = argv[argv.index('--cabs') + 1] if '--cabs' in argv else 'all'
+    if cabs not in ('all', 'none'):
+        sys.exit('build.py: --cabs takes all or none')
     builder, verifier, amps, final = MODES[mode]
     for script, image in REFS:
         if '--quick' in argv and os.path.isfile(os.path.join(HERE, image)):
@@ -73,13 +79,21 @@ def main():
     if 'ALL OK' not in report.splitlines()[-1]:
         sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
     if amps:
-        log = step(['build_amps.py', '--set', 'all', '--preamps', 'all', '--base-file', rel, '--base-check', verifier] + ([man] if man else []))
+        log = step(['build_amps.py', '--set', 'all', '--preamps', 'all'] + (['--cabs', 'all'] if cabs == 'all' else [])
+                   + ['--base-file', rel, '--base-check', verifier] + ([man] if man else []))
         amps_man = next(ln.split('verify_amps.py', 1)[1].strip() for ln in log.splitlines() if 'verify_amps.py' in ln)
         out = os.path.join(HERE, next(ln.split('Done:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done:')))
         report = step(['tools/verify_amps.py', amps_man], quiet=False)
         rel = os.path.relpath(out, HERE)
         if 'ALL OK' not in report.splitlines()[-1]:
             sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
+        if cabs == 'all':
+            cabs_man = next(ln.split('verify_cabs.py', 1)[1].strip() for ln in log.splitlines() if 'verify_cabs.py' in ln)
+            out = os.path.join(HERE, next(ln.split('Done with cabs:', 1)[1].strip() for ln in log.splitlines() if ln.startswith('Done with cabs:')))
+            report = step(['tools/verify_cabs.py', cabs_man], quiet=False)
+            rel = os.path.relpath(out, HERE)
+            if 'ALL OK' not in report.splitlines()[-1]:
+                sys.exit(f'\nbuild.py: {rel} FAILED verification: do not flash it.')
     if '--flat-tuner' not in argv:                   # the tuner shows sharps (A#), not flats (Bb): tools/tuner_sharps.py
         log = step(['tools/tuner_sharps.py', os.path.relpath(out, HERE)], quiet=False)
         if 'ALL OK' not in log.splitlines()[-1]:

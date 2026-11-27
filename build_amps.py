@@ -3,7 +3,7 @@
 (tools/amp_patch.py, runtime_changes) + an "Amps" list under Distortion holding real amp models, with no stock block
 replaced (tools/amps_group.py). Entry 3 is untouched; Entry 0 gains one data segment.
 
-usage: .venv/bin/python build_amps.py [--set tweed|fifteen|all] [--preamps none|all]
+usage: .venv/bin/python build_amps.py [--set tweed|fifteen|all] [--preamps none|all] [--cabs none|all]
                                      [--base nam | --base-file IMAGE.hxf --base-check SCRIPT [ARG]]
 
 Writes build/HX_Effects_v3.80.0_MemWin_Amps_<set>.hxf and build/amps_<set>_manifest.json.
@@ -17,7 +17,12 @@ Writes build/HX_Effects_v3.80.0_MemWin_Amps_<set>.hxf and build/amps_<set>_manif
              tools/verify_amps.py. Writes build/<image>_MemWin_Amps_<set>.hxf and build/amps_<set>_<image>_manifest.json.
 --preamps all  also every preamp the HX Stomp lists (112), in a "Preamps" list under EQ (its third list): the
              name gains _Pre, e.g. ..._MemWin_Amps_all_Pre.hxf and amps_all_pre_..._manifest.json.
-Check the result with tools/verify_amps.py <manifest> before flashing.
+--cabs all    (needs --preamps all) also, as a second image built from the same base: the 41 legacy single cabs
+             the HX Stomp lists, in a "Cabs" list under EQ (its fourth), two cab blocks per preset
+             (tools/cabs_group.py). The amps image and its manifest are written as without --cabs; the cabs image
+             is the same name with _Cabs, its manifest amps_<set>_pre_cabs_..._manifest.json, checked by
+             tools/verify_cabs.py against the amps image. --cabs none (the default) changes nothing.
+Check the result with tools/verify_amps.py <manifest> (and tools/verify_cabs.py <cabs manifest>) before flashing.
 """
 import hashlib
 import json
@@ -29,6 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, 'tools'))
 import amp_patch as ap  # noqa: E402
 import amps_group as ag  # noqa: E402
+import cabs_group as cg  # noqa: E402
 import l6ia  # noqa: E402
 import memwin_patch as mp  # noqa: E402
 import patch_amp as pa  # noqa: E402
@@ -46,12 +52,14 @@ def run(*args):
     return r.stdout
 
 
-def entry0(e0_stock, e3, amps, preamps=()):
-    """(Entry 0 bytes, in-place changes, segment info) for the lists of amp and preamp model names."""
+def entry0(e0_stock, e3, amps, preamps=(), cabs=()):
+    """(Entry 0 bytes, in-place changes, segment info) for the lists of amp, preamp and cab model names."""
     e0 = mp.apply(e0_stock)
     ch = ap.runtime_changes(e0, e3)
-    more, seg, info = ag.plan(e0, e3, amps, preamps)
+    more, seg, info = ag.plan(e0, e3, amps, preamps, cabs)
     ch += more
+    if cabs:
+        ch += cg.code_changes(ap.entry0(e0, ch))
     return ag.add_segment(ap.entry0(e0, ch), info['seg_va'], seg), ch, info
 
 
@@ -68,6 +76,12 @@ def main():
     if pre_set not in ag.PRE_SETS:
         sys.exit('build_amps.py: --preamps takes ' + ' or '.join(ag.PRE_SETS))
     preamps = ag.PRE_SETS[pre_set]
+    cab_set = argv[argv.index('--cabs') + 1] if '--cabs' in argv else 'none'
+    if cab_set not in cg.SETS:
+        sys.exit('build_amps.py: --cabs takes ' + ' or '.join(cg.SETS))
+    cabs = cg.SETS[cab_set]
+    if cabs and not preamps:
+        sys.exit('build_amps.py: --cabs all needs --preamps all (the Cabs list is EQ\'s fourth, after Preamps)')
     name_pre = name + ('_pre' if preamps else '')
     base = argv[argv.index('--base') + 1] if '--base' in argv else None
     if base is not None and base not in BASES:
@@ -128,6 +142,35 @@ def main():
         print(f'      {a["display"]:18s} {a["model"]}: preset id {a["preset_id"]}, cost {a["cost"]}')
     print(f'\nDone: {os.path.relpath(out, HERE)}\nMD5 {man["output_md5"]}\n'
           f'Now run: .venv/bin/python tools/verify_amps.py build/amps_{name_pre}{tag}_manifest.json')
+    if not cabs:
+        return
+    # the cabs image: the same base, the same amps and preamps, plus the cabs
+    arc, _ = pa.load_l6ia_from_any(src)
+    e0c, chc, infoc = entry0(e0_stock, e3, ag.SETS[name], preamps, cabs)
+    amp_sites = {(va, new) for va, new, _ in ch}
+    arc, _, _ = l6ia.rebuild_archive(arc, {0: e0c})
+    image_c = os.path.join(build, f'amps_{name_pre}_cabs{tag}.l6ia')
+    out_c = out[:-len('.hxf')] + '_Cabs.hxf'
+    open(image_c, 'wb').write(arc)
+    if 'ALL OK' not in run(os.path.join('tools', 'l6ia_verify.py'), image_c):
+        sys.exit('build_amps.py: the cabs image failed its checksum check')
+    run(os.path.join('tools', 'hxf.py'), 'pack', image_c, out_c, '--donor', STOCK)
+    man_c = dict(output=os.path.relpath(out_c, HERE), output_md5=hashlib.md5(open(out_c, 'rb').read()).hexdigest(),
+                 stock_md5=STOCK_MD5, base=base_rel, base_md5=base_md5, base_check=base_check, memwin=True, set=name,
+                 amps=ag.SETS[name], preamps=preamps, cabs=cabs, segment=infoc,
+                 amps_manifest=os.path.relpath(os.path.join(build, f'amps_{name_pre}{tag}_manifest.json'), HERE),
+                 amps_output=man['output'], amps_md5=man['output_md5'], entry0_growth=len(e0c) - len(e0_stock),
+                 cab_changes=[dict(address=va, length=len(new), what=what, new=new.hex()) for va, new, what in chc
+                              if (va, new) not in amp_sites])
+    man_c_path = os.path.join(build, f'amps_{name_pre}_cabs{tag}_manifest.json')
+    json.dump(man_c, open(man_c_path, 'w'), indent=1)
+    print('\nWith the cabs: the changes that differ from the amps image')
+    for c in man_c['cab_changes']:
+        print(f'[+] {c["address"]:#010x} +{c["length"]:2d}  {c["what"]}')
+    print(f'[+] new segment at {infoc["seg_va"]:#x}: {infoc["seg_len"]} bytes = Table 1 with {infoc["rows"]} rows, then the '
+          f'Amps, Preamps and {len(cabs)} Cabs items')
+    print(f'\nDone with cabs: {man_c["output"]}\nMD5 {man_c["output_md5"]}\n'
+          f'Now run: .venv/bin/python tools/verify_cabs.py {os.path.relpath(man_c_path, HERE)}')
 
 
 if __name__ == '__main__':

@@ -285,6 +285,50 @@ HX Edit's own libusb). Same channel as flash.py (port 0x1001 -> 0x03ef); select 
 - Tested on the unit: put/rename/copy/delete/get (Python), and the page's code (web/flasher.js) from Node with the
   `usb` package's WebUSB and from Chrome (user).
 
+## 2026-11-27 (Part B): legacy cabs (branch `legacy-cabs`; single cabs tested on the unit, the rest pending)
+
+**Decisions (user):** the 41 legacy single cabs (type 0x0f) the HX Stomp lists, in one "Cabs" list as EQ's fourth
+(EQ: Mono, Stereo, Preamps, Cabs), with the Stomp's names. **Two cab blocks per DSP** (a cab in each path).
+New-style cabs and Amp+Cab blocks: not included (no sound data in this firmware).
+
+**Dual cabs: tried and dropped (user, 2026-11-27).** The first test image (`34d84bab`, then `84b32790` on the
+Acoustic kit) also listed the 41 dual cabs (0x10) with a recount change, two weight changes and a 10-byte code cave
+counting a dual as one amp + one cab, and a cab limit of 1. On the unit the single cabs listed and played, and the
+duals listed, but each dual item plays one cab twice and the HX Effects has no screen to choose the second cab. The
+user dropped them in favour of two singles per DSP: the dual items, the recount change, the weight changes and the
+cave are gone; the stock weights stay (a dual arriving in a preset would count as both cabs).
+
+**What's built:**
+- `tools/cabs_group.py`: the cab list, the item layout (the Stomp's single items) and the one code change: the
+  placement check's cab limit 0 -> 2 (0x280f22a8, `cmp r4, #0` -> `cmp r4, #2`). A single cab weighs one cab, no amp,
+  no IR, and runs in a LITTLE record like an effect, so the amp limit and records are untouched.
+  `tools/amps_group.plan(..., cabs=...)` appends one Table 1 row per cab after the preamps' (688 + 41 = 729 rows) and
+  the 41 items after the Preamps items; EQ's list count 3 -> 4, list 11, name "Cabs".
+- `build_amps.py --cabs all` (needs `--preamps all`) writes the amps image and its manifest exactly as before, then
+  a second image with the cabs (`..._Cabs.hxf`, manifest `amps_all_pre_cabs_<base>_manifest.json`).
+  `tools/verify_cabs.py` checks it against the amps image (only the 10 listed sites and the segment differ; rows and
+  items against the Stomp's; Table 1 code emulated; the recount + placement check emulated on 4,200 cases against
+  the stock and the new rules; the allocator emulated; the container, slots and DSP fit).
+- `build.py amps|full` add the cabs by default (`--cabs none` to leave them out) and end "verified ALL OK" only if
+  verify_amps.py and verify_cabs.py both pass. With `--cabs none` the image is byte for byte the one without the
+  cab code (checked with the first version: full `06fee4c9...`, amps `13cf6c22...`).
+- **Test image** (main at e729c4b's firmware, i.e. the v1.1.0 Acoustic kit, plus the cabs; build_amps + verifiers +
+  tuner on that base): `build/HX_Effects_v3.80.0_NAM_Amps_Effects_Cabs2.hxf`, MD5 `930bc33e8c15530a8469bdf1c2479e9e`,
+  verified ALL OK (verify_amps, verify_cabs, tuner). Flashed 2026-11-27: booted in 119 s, no HardFault.
+
+**On the unit (84b32790, 2026-11-27):** booted, no HardFault; EQ -> Cabs lists the singles and they play.
+**On the unit (930bc33e, 2026-11-27):** two cabs, one in each path of a Y split, both play (a first "path B is
+silent" report was the split sitting after path A's cab; the log showed no error). A third cab is refused. Mic,
+Distance, Low Cut, High Cut, Early Reflections and Level all work. A cab after an amp and after NAM both work.
+Bypass works; save, switch preset and return keep the cabs. Log: no HardFault; preset saves "result 0", loads 131
+and 162 ms; one `ERROR: check at ./src/app/fsStompView.c:5361` just before `hci_didClearModel 5` (a block
+cleared). The same line comes before `hci_didClearModel` in a log with no cabs (2026-11-18_crash_4overlays.log),
+so it is not the cabs'. **All the cab tests pass.**
+The Acoustic kit (not the cabs) also passed its listening test on this image: "the acoustic kit is fine".
+
+**Not done:** the preset builder (`tools/preset-builder/make_catalog.js` regeneration for the 41 items, the cab
+block's Mic sub-slot, string 0x806, and an LED colour for the cab type) and the setup page.
+
 ## Open / next
 
 1. ~~Verify the standalone build on the unit~~ — done 2026‑11‑03 (flashed twice, boots). Still worth a
@@ -549,7 +593,8 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
   254 data (was 774 + 452). Flashed 2026-11-27, booted, no HardFault; the kit played on the unit, but Nonlinear froze
   it (the bug below, fixed on main and merged in at fe995d6).
 - **Release image** (`build.py full` at fe995d6, kept as `build/HX_Effects_v3.80.0_NAM_Amps_Effects_AcousticKit_Fix.hxf`):
-  MD5 bda07f1eae1f58a32e889eb5ad20a8ce, verified ALL OK; flashed 2026-11-27, booted, no HardFault.
+  MD5 bda07f1eae1f58a32e889eb5ad20a8ce, verified ALL OK; flashed 2026-11-27, booted, no HardFault. The user's
+  listening test (on 930bc33e, the same firmware plus the cabs, 2026-11-27): "the acoustic kit is fine".
   `web/recipe-full.bin` is made from it (`tools/recipe.py apply` reproduces the MD5). Released as v1.1.0.
 - Still to do: Drum Chapel's cost (build_all's rule gives about 1,650 from 1,361 words; the image still declares 1,550), user kits, the preset
   builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
@@ -618,7 +663,7 @@ list under Distortion (`tools/amps_group.py`), so no stock block is replaced. Th
 `tools/verify_amps.py`; `build.py nam` stops before the amps. Each copies its final image to a plain name in build/.
 Limits: three amps and preamps per preset together (placement limit patched to 3; the DSP has three amp slots,
 fx.13..fx.15; preamps are amp-type blocks, 0x11). No cabs (the user dropped them: legacy cabs need the cab limit and unstudied
-screens, new-style cabs need the Stomp's 54 MB cab package, absent here). The images keep the USB memory window
+screens, new-style cabs need the Stomp's 54 MB cab package, absent here). (Legacy cabs since added: 2026-11-27, Part B.) The images keep the USB memory window
 (`tools/memwin.py`). On the unit (2026-11-17): the NAM + Click + amps image (MD5 e2162bcaf9d295612c24ebe1161c7df0,
 what `build.py amps` made before the preamps) played NAM, an amp after it and Click; all 111 amps loaded on the
 stock-based image. The full + amps image (MD5 edd48969de189b3686bcb8bdfc5f2e93) was flashed on 2026-11-17 and boots: no fault, the same boot-log lines as the NAM + amps image; the user's test the same day: "All played" (the effects, NAM and amps). Its log: 367 model changes, all successful, presets saved, no fault. New in this log only: 34 lines `UNKNOWN FOOTSWITCH MODE 11` + `app.c:1624 ERROR_INVALID_PARAMETER` in one burst after a model change; the message is in the HX Effects' own footswitch code (not in the Stomp's); cause not looked into.

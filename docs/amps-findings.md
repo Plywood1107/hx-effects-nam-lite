@@ -512,6 +512,98 @@ one against the HX Effects firmware (all verified offline unless marked):
   studied.
 - At most three amp-type blocks at once (the three amp-capable slots), amps and preamps together.
 
+## Legacy cabs (2026-11-27; `tools/cabs_group.py`, `tools/verify_cabs.py`; singles tested on the unit)
+
+**Current state:** the 41 legacy single cabs (type 0x0f, CAB_SINGLE) in one "Cabs" list, EQ's fourth (EQ: Mono,
+Stereo, Preamps, Cabs), and **two cab blocks per DSP**: the one code change is the cab limit at 0x280f22a8,
+`cmp r4, #0` -> `cmp r4, #2`. A single cab weighs one cab and runs in a LITTLE record, so nothing else changes.
+
+**Dual cabs were built, tried on the unit and dropped** (user, 2026-11-27). They listed and played, but a dual item
+names one model for both cabs (as the Stomp's items do), and the HX Effects has no screen to choose the second cab,
+so a dual could only play one cab twice. A cab in each path does the job. The rest of this section is the dual-cab
+design as built for that test (82 items, the recount and weight changes, the cave, a cab limit of 1), kept because
+the findings about the recount, the weights and the allocator still hold.
+
+The first plan: all 41 legacy single cabs and all 41 legacy dual cabs (0x10, CAB_DUAL) in that list; one cab block
+per preset, single or dual.
+New-style cabs and the Amp+Cab blocks are not included: their sound data is not in this firmware (above).
+
+**The menu side** goes with the amps (`amps_group.plan(..., cabs=...)`, `build_amps.py --cabs all`). One Table 1
+row per cab ({name index, the Stomp's preset id, 0, 720}), after the amps' and preamps' rows (465 + 111 + 112 = 688, + 41 = 729 rows);
+then the 82 items after the Preamps items: the 41 singles (the Stomp's items byte for byte: type 0x0f, name index,
+0xffffffff, preset id, the Stomp's name, 1, 0), then the 41 duals (the Stomp's: type 0x10, **the same model's name
+index at +4 and +8**, the single's preset id; names from `tools/cab_list.py`, "Dual ...", 16 characters at most).
+EQ's list count 3 -> 4, list 11's pointer and count (82), its name field (empty on stock) "Cabs". The list view's
+highlight clamp (amps_group) already covers a four-list EQ. Single and dual share one row and one preset id, as
+on the Stomp: the preset-id -> item map (0x28109974) only takes items whose +8 is 0xffffffff (or whose type is
+0x20), so an id leads to the single item, as on the Stomp. The cab ids (45..74, 355..366, 551, 552, 589, 590) are
+unused on the Effects and below 833; every cab has a Table 2 row and its model, parameters and graph here.
+
+**Where the block types go** (all checked in the bytes):
+- Container (tbh at 0x280f3ee8): 0x0f -> `HD2_AppCabHarnessSingle` (modelSlot + Mic, 0x280f4406), 0x10 ->
+  `HD2_AppCabHarnessDual` (modelSlot1, modelSlot2, two Mics, 0x280f4396). Every DSP slot fx.0..15 accepts the
+  single container; only fx.13..15 accept the dual one (Entry 3 groups 109..111), and since the amp work block
+  records 6..8 are tied to those.
+- Allocator (0x280ed3ec): 0x0f is LITTLE (first free record from 0, as an effect), 0x10..0x12 and 0x21 BIG (the
+  amp path, records 6..8). Emulated in verify_cabs.py.
+- Amp registry (0x280f9118): types 0x11, 0x12, 0x21 only (and "return 0" since the amp work). No cab registry.
+- Menu availability (0x28113eb8): per item the DSP cost test and a few model-id rules; the only block-count rule
+  is the IR category's (category 0xb, the IR count at 0x2811410e). Nothing greys a cab item in EQ (category 4 in
+  that code). A second cab is therefore listed normally and refused by the placement check when chosen, like a
+  fourth amp.
+
+**The counters and the placement check.** The per-DSP counters are recounted from the block records by
+0x280f0b8c (called from 0x280f21be): a jump table (tbh at 0x280f0bc4) by record type adds 1 to the amps (+0xae8)
+for 0x11, 0x12, 0x21; to the cabs (+0xae4) 1 for 0x0f and 0x12, **2 for 0x10**; to the IRs (+0xae0) 1 or 2. The
+placement check at 0x280f221c then tests count - old block's weights + new block's weights against a limit for
+each (amps `cmp r3` at 0x280f2296, cabs `cmp r4` at 0x280f22a8, IRs `cmp r1, #2` at 0x280f22b2). The weights are
+set per type in two places: the old block's (type in r5; amp r4, cab ip, IR sl) and the new one's (type in lr; amp
+r3, cab r2, IR r0). Stock: a dual weighs cab 2, amp 0, and the cab limit is 0.
+
+A dual runs in a BIG record, so it must count as one of the three amp-type blocks, or three amps and a dual pass
+the check and the allocation then fails (which breaks the signal flow). And all three places must agree, since the
+check subtracts the old block's weights from counts the recount made. With only the two weight sites changed, a
+dual on the DSP still makes the cab count 2, so with a limit of 1 every later placement on that DSP is refused,
+even an effect, and the dual can't be swapped for another cab (found by emulating both together, verify_cabs.py
+section 5). The changes (`cabs_group.code_changes`):
+
+| Address | Stock | New | |
+|---|---|---|---|
+| 0x280f0be8 | `a1 00` | `8d 00` | recount: type 0x10 takes type 0x12's case (amps + 1, cabs + 1) |
+| 0x280f2254 | `4ff0020c a246` mov.w ip, #2; mov sl, r4 | `a246 0124 a446` mov sl, r4; movs r4, #1; mov ip, r4 | old block a dual: IR 0 (r4 is 0 there, 0x280f224e), amp 1, cab 1 |
+| 0x280f2280 | `0222 1846` movs r2, #2; mov r0, r3 | `fbf796b8` b.w 0x280ed3b0 | new block a dual: to the cave |
+| 0x280ed3b0 | (log string) | `0122 0123 0020 04f065bf` movs r2, #1; movs r3, #1; movs r0, #0; b.w 0x280f2284 | cab 1, amp 1, IR 0 |
+| 0x280f22a8 | `002c` cmp r4, #0 | `012c` cmp r4, #1 | one cab block per DSP |
+
+Flags: `movs r4, #1` and the cave's `movs` set flags, but nothing tests them before the `lsrs` at 0x280f2262 and
+0x280f228c set them again. lr (the new type) is untouched, so 0x280f2284 (`sub.w r6, lr, #0x16`) runs as before.
+Nothing else branches to 0x280f2254..59, 0x280f2280..83 or 0x280f22a8 (scanned). (The new path would also fit
+without a cave, in the 12 bytes at 0x280f2278: `ite ne; movne r3, #0; moveq r3, #1; bne.w 0x280f23ee;
+b 0x280f23f4`, reusing the single cab's `movs r2, #1; movs r0, #0`. Not used: the cave was the design asked for.)
+
+**The cave** is 10 bytes at 0x280ed3b0, inside the log string "INFO: out of BIG blocks for BIG models, will
+attempt LITTLE block eviction..." (0x280ed39c, 78 bytes with its NUL, up to the allocator at 0x280ed3ec), right
+after amps_group's 20-byte list-view routine. The string's only reference anywhere in Entry 0 is the literal at
+0x280ed4ac; its only load was `ldr r0, [pc, #0x3c]` at 0x280ed46c, which the amp work's allocator change replaced
+with `movs r2, #6`. (The two `movw r3, #0xd3c8` at 0x280ce490 and 0x280ce4e8 are a 16-bit tag, not an address.)
+
+**Emulated** (verify_cabs.py): the recount and the check together, on every combination of up to three blocks of
+types 0x01, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x21, every replacement and every new type (4,200 cases): the
+amps image follows the stock rules exactly, the cabs image the new ones (a dual = one amp + one cab; one cab,
+three amps, two IRs). So: one single or one dual per DSP; a dual can be swapped for a single or another dual in
+place; three amps refuse a dual, a dual and two amps refuse a third amp, two amps take a dual.
+
+**Risk for the unit: the dual container's DSP memory.** `HD2_AppCabHarnessDual` needs DM 900, PM 542, SDRAM
+10,240 words; the amp container, proven in fx.13..15, needs 1,438 / 511 / 2,048. A dual needs 31 more PM words
+and 8,192 more SDRAM words than anything run in those slots so far; whether fx.13..15 reserve that is only known
+on the unit. The single container (454 / 274 / 5,120) is well inside the mono effect container (917 / 339 /
+394,240). Each cab's graph is 446 DM / 269 PM / 5,120 SDRAM words, 25 members, as on the Stomp, and uses only
+routines in the DSP program.
+
+Not done here: the preset builder (`tools/preset-builder/make_catalog.js` would need regenerating for the 82
+items, with the cab blocks' Mic parameter, string 0x806, which is a sub-slot of its own), the setup page, and the
+cab blocks' screens on the unit (Mic, distance and the rest: never seen on the HX Effects).
+
 ## Open questions for phase 1
 
 1. ~~Where is the RTT buffer, how big is it, and is logging switched on by default?~~ Answered above: 64 KB at

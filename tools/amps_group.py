@@ -35,6 +35,9 @@ the running unit never touches (sampled over the memory window: still power-up n
 
 Each amp's preset id and DSP cost are the HX Stomp's own for that amp (its Table 1), so a preset stores the same
 id the Stomp would.
+
+4. With cabs (tools/cabs_group.py): their rows follow the preamps' in the same table, and their items (the single
+   cabs) follow the Preamps items, as EQ's fourth list, "Cabs". With no cabs, nothing changes.
 """
 import os
 import struct
@@ -97,9 +100,11 @@ def movw(rd, imm):
     return struct.pack('<HH', 0xF240 | (imm >> 11 & 1) << 10 | imm >> 12, (imm >> 8 & 7) << 12 | rd << 8 | imm & 0xFF)
 
 
-def plan(e0, e3, amps, preamps=()):
+def plan(e0, e3, amps, preamps=(), cabs=()):
     """(in-place changes [(address, bytes, what)], segment bytes, info) for a list of amp model names and (optional)
-    a list of preamp model names. The amps go in Distortion's fourth list, the preamps in EQ's third."""
+    lists of preamp and cab model names. The amps go in Distortion's fourth list, the preamps in EQ's third, the
+    single cabs in EQ's fourth. The cabs' code changes are cabs_group.code_changes."""
+    import cabs_group as cg
     A = pa.EFFECTS_E0
     info = pa.parse_entry3_full(e3)
     segs = pa._parse_e0_segments_any(bytearray(e0))
@@ -129,7 +134,20 @@ def plan(e0, e3, amps, preamps=()):
         items += struct.pack('<IIIH', ap.BTYPE_AMP, idx, 0xFFFFFFFF, pid) + disp.encode('latin1')[:25].ljust(26, b'\0') + \
             struct.pack('<II', 1, 0)
         listed.append(dict(model=name, name_idx=idx, preset_id=pid, cost=cost, display=disp, kind=kind))
-    count = A.TAB1_CNT + len(amps) + len(preamps)
+    assert not cabs or preamps, 'the Cabs list is EQ\'s fourth: it needs the Preamps list'
+    for name in cabs:
+        m = pa.find_model(info, name)
+        pid, cost, sdisp = cg.CABS[name]
+        idx = m['words'][2]
+        assert idx not in used_names and pid not in used_ids and pid < PRESET_MAP_ENTRIES, name
+        assert (m.get('meta') or {}).get('category') == 'cab', f'{name} is not a cab model'
+        assert [1 for i in range(A.TAB2_CNT) if u32(A.TAB2_BASE + 44 * i) == idx], f'{name} has no Table 2 row'
+        used_names.add(idx)
+        used_ids.add(pid)
+        rows += struct.pack('<IHHI', idx, pid, 0, cost)
+        items += cg.item(cg.BTYPE_SINGLE, idx, 0xFFFFFFFF, pid, sdisp)
+        listed.append(dict(model=name, name_idx=idx, preset_id=pid, cost=cost, display=sdisp, kind='cab'))
+    count = A.TAB1_CNT + len(amps) + len(preamps) + len(cabs)
     t1_va = SEG_VA
     items_va = SEG_VA + 12 * count
     seg = stock_rows + rows + items
@@ -159,11 +177,22 @@ def plan(e0, e3, amps, preamps=()):
         ch.append((A.BLIST_PTR_TAB + 4 * slot, struct.pack('<I', items_va + 48 * len(amps)), f'menu list {slot}: the Preamps items'))
         ch.append((A.BLIST_CNT_TAB + 4 * slot, struct.pack('<I', len(preamps)), f'menu list {slot}: {len(preamps)} item(s)'))
         assert u32(A.SUBCAT_CNT + 4 * CAT_EQ) == 2
-        ch.append((A.SUBCAT_CNT + 4 * CAT_EQ, struct.pack('<I', 3), 'EQ: 2 lists -> 3'))
+        neq = 4 if cabs else 3
+        ch.append((A.SUBCAT_CNT + 4 * CAT_EQ, struct.pack('<I', neq), f'EQ: 2 lists -> {neq}'))
         pname_va = A.SUBCAT_NAMES + SUBCAT_NAME_LEN * slot
         # stock EQ already names an unused third list "Legacy" (its list count is 2, so it is never shown)
         assert rd(pname_va, SUBCAT_NAME_LEN) == b'Legacy'.ljust(SUBCAT_NAME_LEN, b'\0') and rd(pname_va - SUBCAT_NAME_LEN, 7) == b'Stereo\0'
         ch.append((pname_va, PREAMP_GROUP_NAME.encode().ljust(SUBCAT_NAME_LEN, b'\0'), f'EQ\'s third list\'s name: {PREAMP_GROUP_NAME!r}'))
+    if cabs:
+        assert (cg.CAT_EQ, cg.CABS_LIST) == (CAT_EQ, PREAMPS_LIST + 1)
+        slot = 4 * CAT_EQ + cg.CABS_LIST
+        cabs_va = items_va + 48 * (len(amps) + len(preamps))
+        assert u32(A.BLIST_PTR_TAB + 4 * slot) == 0 and u32(A.BLIST_CNT_TAB + 4 * slot) == 0, 'EQ\'s fourth list is not empty'
+        ch.append((A.BLIST_PTR_TAB + 4 * slot, struct.pack('<I', cabs_va), f'menu list {slot}: the Cabs items'))
+        ch.append((A.BLIST_CNT_TAB + 4 * slot, struct.pack('<I', len(cabs)), f'menu list {slot}: {len(cabs)} single cab item(s)'))
+        cname_va = A.SUBCAT_NAMES + SUBCAT_NAME_LEN * slot
+        assert rd(cname_va, SUBCAT_NAME_LEN) == bytes(SUBCAT_NAME_LEN), 'EQ\'s fourth list name is not empty'
+        ch.append((cname_va, cg.GROUP_NAME.encode().ljust(SUBCAT_NAME_LEN, b'\0'), f'EQ\'s fourth list\'s name: {cg.GROUP_NAME!r}'))
     from thumb1 import bl_bytes
     assert rd(SEL_LIMIT_VA, 2) == SEL_LIMIT_STOCK
     ch.append((SEL_LIMIT_VA, SEL_LIMIT_NEW, 'list view: the highlight stops at the third position (was: number of lists - 1)'))
@@ -177,6 +206,8 @@ def plan(e0, e3, amps, preamps=()):
                  amps=[x for x in listed if x['kind'] == 'amp'])
     if preamps:
         info_.update(preamps_va=items_va + 48 * len(amps), preamps=[x for x in listed if x['kind'] == 'preamp'])
+    if cabs:
+        info_.update(cabs_va=cabs_va, cabs=[x for x in listed if x['kind'] == 'cab'])
     return ch, seg, info_
 
 

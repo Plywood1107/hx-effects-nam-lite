@@ -60,7 +60,7 @@ Prefer a terminal? The same firmware can be built and flashed from this repo: se
 | Build | What's in it |
 |---|---|
 | **NAM** | NAM A2 Lite, Click (metronome) |
-| **NAM + Amps** | the above + the HX Stomp's 111 amps and 112 preamps |
+| **NAM + Amps** | the above + the HX Stomp's 111 amps, 112 preamps, and its 41 legacy cabs (EQ → Cabs) |
 | **NAM + Amps + Effects** | the above + Bolt, Rocket!, Garrrry Tank, Quality Polis, Bam Crusher, Doom Chug, Drum Chapel (a drum machine) and more |
 
 **NAM A2 Lite** (Distortion → Mono, in place of the mono Regal Bass DI): up to three per preset (two in NAM + Amps +
@@ -71,7 +71,11 @@ Effects). Model picks the User IR slot holding the capture (1–21); Input ±20 
 Global Settings → Input Level on Instrument. If a capture feels too clean or too hot, use the Input knob.
 
 **Amps** (Distortion → Amps) and **Preamps** (EQ → Preamps): every amp and preamp the HX Stomp has, with its knobs;
-up to three per preset, together. No stock block is replaced. These builds also carry a small USB diagnostic
+up to three per preset, together. No stock block is replaced.
+
+**Cabs** (EQ → Cabs): the HX Stomp's 41 legacy cabs, up to two cab blocks per preset (say one in each path). No
+dual cabs: the HX Effects has no screen to choose a dual's second cab. The new-style cabs and the Amp+Cab blocks are not
+included: their sound data isn't in this firmware. These builds also carry a small USB diagnostic
 interface (`tools/memwin.py`) for reading the unit's log.
 
 **Effects**: each takes over the stock block in brackets (any stereo version stays).
@@ -90,7 +94,8 @@ interface (`tools/memwin.py`) for reading the unit's log.
 - HX Edit can't edit NAM, the amps or the effects ("code −8200"): use the unit or the preset builder. IR import works.
 - NAM's Model knob reaches User IR slots 1–21. Presets store the slot number, not the capture.
 - Only 3-channel A2 Lite captures fit.
-- Amps and preamps: three per preset at most, together; no cabs (put an IR block after the amp).
+- Amps and preamps: three per preset at most, together; two cab blocks per preset; no dual cabs.
+- The preset builder doesn't list the cabs yet: place them on the unit.
 - With one NAM in each path of a split, the bottom path is quieter.
 - Doom Chug's Chug knob does little except lower the level.
 
