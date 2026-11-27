@@ -34,7 +34,7 @@ file, installs it over USB, and converts and sends your NAM captures.
 <td width="33%" valign="top">
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/"><img src="docs/images/preset-builder.jpg" alt="The preset builder"></a><br>
 <b><a href="https://scottlynn73.github.io/hx-effects-nam-lite/preset-builder/">Preset builder</a></b>: builds presets
-with NAM, the amps and the effects (HX Edit can't) and sends them to the unit.
+with NAM, the amps, the cabs and the effects (HX Edit can't) and sends them to the unit.
 </td>
 <td width="33%" valign="top">
 <a href="https://scottlynn73.github.io/hx-effects-nam-lite/groove-editor/"><img src="docs/images/groove-editor.jpg" alt="The groove editor"></a><br>
@@ -95,7 +95,8 @@ reading the unit's log.
 
 ## Limits
 
-- HX Edit can't edit NAM, the amps or the effects ("code −8200"): use the unit or the preset builder. IR import works.
+- HX Edit can't edit NAM, the amps, the cabs or the effects ("code −8200"): use the unit or the preset builder. IR
+  import works.
 - NAM's Model knob reaches User IR slots 1–21. Presets store the slot number, not the capture.
 - Only 3-channel A2 Lite captures fit.
 - Amps and preamps: three per preset at most, together.

@@ -338,6 +338,9 @@ read from a preset the user saved on the unit (2A "Overlay Test 1": Soup Pro Ell
 `preset-core.js` and `tools/preset_send.py` both write it; their cab blocks are byte for byte the unit's (59 bytes
 each), and `check_core.py` agrees on 400 random presets. At most two cabs per preset (the page refuses a third). The
 cab footswitch LED (0xff0003 on, as the unit stored; 0x0b0000 off) looks right on the unit (user, 2026-11-27).
+**Released as v1.2.0 (2026-11-27)**, with the three pages made consistent (the builder's header "HX Effects Preset
+Builder", "Firmware: setup page →" and "Grooves: groove editor →" beside its recovery box) and the cabs in every
+README and page list; notes in build/briefs/release-notes-v1.2.0.md.
 **Not done:** the amps recipe with cabs.
 
 ## Open / next
