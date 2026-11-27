@@ -546,6 +546,24 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
   region's data 128 words over, before Click); the image with the move: see below.
 - Still to do: the image with the new kit (ask before flashing), Drum Chapel's cost, user kits, the preset
   builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
+## 2026-11-27: Nonlinear froze the DSP (fixed: Drum Chapel's hook moved from 0x23ac to 0x104)
+
+- **The bug** (in every full image with Drum Chapel, v1.0.0 included): selecting Reverb → Nonlinear, even alone in a
+  preset, made the DSP panic (`SPI[0]: Got panic indicator! PC:0x00000000` / `0xFFFFFFFF`, then endless SPIComm
+  errors; ARM fine, no HardFault). Logs: build/logs/*-freeze.log. Stock 3.80 plays Nonlinear.
+- **Ruled out** (offline, verified): DSP memory overlap (the run-time PM heap H1 ends at 0xe3c81, 3,023 words below
+  our Block 3 kernels), the moved Heap 6 (Simple Delay and Heliosphere use it and play), Nonlinear's graph, model,
+  blob and primitive records (identical to stock), fixed addresses in its code. On the unit: Searchlights, Hot Springs,
+  HX Room and Euclidean Delay (sharing some of its routines) play; the release without Drum Chapel plays Nonlinear.
+- **The cause:** Drum Chapel hooked primitive 0x23ac. In stock, 0x23ac and 0x23ab are two modes of one routine
+  (same shared function 0x60c08d); 0x23ab is used only by Nonlinear (sub-composite 0x6000c3). Replacing 0x23ac's
+  record broke 0x23ab's use at run time (mechanism not traced). Only 8 unused primitives share no code with a used
+  one: 0x87, 0x104, 0x105, 0x20f, 0x261a, 0x271d, 0x2aa8/0x2aaa (the last two used by the root graph). Drum Chapel now
+  uses **0x104**. Image MD5 f18a5714defd3a6c43472d753e2fffde, verified ALL OK; on the unit 2026-11-27: Nonlinear
+  alone, Drum Chapel alone and both together play. web/recipe-full.bin regenerated from it (applies to that MD5).
+- **Still to check:** our other hooks also share routines with stock ones (Click and Geiger with 0x102/0x127, Puggy
+  with 0x216, Bethblahem with 0x832, Corrupt with 0x814, Ottobit with 0x23aa, Greasy with 0x225); no problem seen,
+  but the stock blocks using those routines should be tried with nothing else in the preset.
 
 ## Don'ts
 

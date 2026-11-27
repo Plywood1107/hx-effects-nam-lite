@@ -229,7 +229,9 @@ EFFECTS = {
                   params=PUGGY_PARAMS, entry='OVL_ENTRY_PUGGY', sync=True),   # tempo-synced like Click; worst 2,627 cycles in ssim
     'greasy': dict(takeover='VIC_PitchBoctaverMono', name='HD2_PitchGreasyStrangler', display='Greasy Strangler', short='Greasy Strangler',
                    cost=700, prim=0x2AB6, params=GREASY_PARAMS, entry='OVL_ENTRY_GREASY'),   # worst 2,788 cycles in ssim
-    'drumchapel': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayDrumChapel', display='Drum Chapel', cost=700, prim=0x23AC,
+    'drumchapel': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayDrumChapel', display='Drum Chapel', cost=700, prim=0x0104,   # not 0x23ac: that slot shares its routine with
+                       # 0x23ab (another mode of one function), which only Nonlinear uses; hooking it froze Nonlinear (2026-11-27)
+                      
                        params=DRUMCHAPEL_PARAMS, entry='OVL_ENTRY_DRUMCHAPEL', sync=True,
                        # Ratchet is 'followEnable' (the unit keeps the block running and hands it the on/off state):
                        # dropped here and cleared in its Entry 0 Table 2 row (word 36), so the footswitch bypasses
