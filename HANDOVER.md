@@ -513,6 +513,27 @@ Risks for the unit test: per-sample DDR2 reads from an overlay (up to four a sam
 crossfading, ~64 a call; ssim does not model DDR2 latency, Pure Whitey's ring is the nearest proven case), the larger
 swap per call, and Acoustic's output, which can reach about 2 x Level where kick, snare and tom meet at full knobs.
 
+## 2026-11-27: Part A, Drum Chapel's user grooves and the groove editor (branch `user-grooves`)
+
+- **The plan, after the host probe** (branch `probe-build`: a block gets the SDRAM its graph member asks for):
+  grooves are read straight from their IR slot (no SDRAM); the Acoustic kit's five voices become 8-bit mu-law at
+  24 kHz in Blob 0 (user's choice after an ear test: `effects/drumchapel/formats_demo.py` renders kick, snare and a
+  beat as 16-bit/48 kHz, mu-law/48 kHz and mu-law/24 kHz), decoded as they play; a user kit from slots 121-127 is
+  copied into the block's own SDRAM block (next). Slot numbers: grooves 128, kit 121-127 (user, 2026-11-27).
+- **User grooves: done in the reference and the kernel.** Groove 12 = User reads User IR slot 128 (format:
+  `effects/README.md`, "User grooves"). `grooves.py --user FOLDER` writes the slot's .wav from MIDI loops.
+- **The groove editor** (`tools/groove-editor/`, linked from the top of the setup page; on the site at
+  groove-editor/ via `tools/deploy_pages.sh`): a step grid (any N/4 or N/8 meter, bars, up to 20 patterns, the
+  unit's eight sounds: kick, snare, closed and open hat, four toms, with its one-hat/one-tom rules), preview with each
+  kit's sounds as the reference makes them (`make -C effects kit-sounds` renders the 56 one-shots into
+  `tools/groove-editor/sounds/`), your own hits for previewing, MIDI import (`groove-core.js`, byte for byte
+  `grooves.py`: `tools/groove-editor/check_core.py`), .json save/open, the slot's .wav, and Send to unit (slot 128
+  over WebUSB, as the setup page sends IRs). Twenty starting points in `beats.js`, written for this project after
+  the feel of well-known drum parts (Back in Black, No One Knows, Smells Like Teen Spirit, Scentless Apprentice,
+  Enter Sandman, Firestarter, New Noise, ...) and a few odd meters: no transcriptions, no MIDI or audio from anyone.
+- Still to do: the Acoustic kit repack (five voices), user kits, an image with all of it (ask before flashing), the
+  preset builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
+
 ## Don'ts
 
 - Don't change the MD5 check to force another firmware through; every offset above is for 3.80.0.

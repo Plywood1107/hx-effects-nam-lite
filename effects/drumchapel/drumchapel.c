@@ -41,7 +41,7 @@ static const FxParamDesc PARAMS[DC_NPARAMS] = {
     { "hat",     "Hat",     FX_CONTINUOUS, 0.0f, 1.0f,  0.5f, "x (shown as %)", "next hit" },
     { "swing",   "Swing",   FX_CONTINUOUS, 0.0f, 1.0f,  0.0f, "x 1/3 sixteenth on odd sixteenths", "immediate" },
     { "level",   "Level",   FX_CONTINUOUS, 0.0f, 1.0f,  0.5f, "x (shown as %)", "immediate" },
-    { "groove",  "Groove",  FX_INTEGER,    0.0f, 11.0f, 0.0f, "", "next step" },
+    { "groove",  "Groove",  FX_INTEGER,    0.0f, 12.0f, 0.0f, "12 User (IR slot 128)", "next step" },
 };
 
 /* ------------------------------------------------------------------ patterns: one character a sixteenth */
@@ -278,6 +278,65 @@ static uint32_t step_byte(uint32_t dir, uint32_t k)
     uint32_t i = (dir >> 9) + k;
     return BANK[DRUMCHAPEL_DIR_WORDS + i / 4] >> (8 * (i % 4)) & 0xFFu;
 }
+
+/* ------------------------------------------------------------------ the user groove bank (drumchapel.h) */
+static float bf(uint32_t u)
+{
+    float f;
+    memcpy(&f, &u, sizeof f);
+    return f;
+}
+
+/* a sample's value: v x 2^-21 back to v, or -1 if it is not 0 <= x < 8 */
+static int32_t uvalue(uint32_t u)
+{
+    float x = bf(u);
+    if (!(x >= 0.0f && x < 8.0f))
+        return -1;
+    return (int32_t)(x * 2097152.0f);
+}
+
+/* Groove = User: its directory value for Pattern p, or 0 to play Classic (the slot empty, not a groove bank, or
+   the pattern's value not a groove inside its steps) */
+static uint32_t user_dir(const uint32_t *w, int p)
+{
+    float np, ns;
+    int32_t n, steps, e;
+    uint32_t len, first;
+    if (!w || bf(w[0]) != 0.5f || bf(w[1]) != -0.5f || bf(w[2]) != 5.0f || bf(w[3]) != 1.0f)
+        return 0;
+    np = bf(w[4]) * 2.0f;
+    ns = bf(w[5]) * 1024.0f;
+    if (!(np >= 1.0f && np <= 20.0f && ns >= 4.0f && ns <= (float)DCU_MAX_STEPS))
+        return 0;
+    n = (int32_t)np;
+    steps = (int32_t)ns;
+    if ((float)n != np || (float)steps != ns)
+        return 0;
+    while (p >= n) p -= n;
+    e = uvalue(w[DCU_DIR + p]);
+    if (e < 0)
+        return 0;
+    len = (uint32_t)e & 511u;
+    first = (uint32_t)e >> 9;
+    if (len < 4u || len > DRUMCHAPEL_MAX_STEPS || (len & 3u) || first + len > (uint32_t)steps)
+        return 0;
+    return (uint32_t)e;
+}
+
+/* step i of the user bank: byte i mod 3 of sample DCU_STEPS + i / 3 (i / 3 as the kernel takes it: i x 43691 >> 17,
+   exact below 98,304) */
+static uint32_t user_step(const uint32_t *w, uint32_t dir, uint32_t k)
+{
+    uint32_t i = (dir >> 9) + k, q = (i * 43691u) >> 17;
+    int32_t v = uvalue(w[DCU_STEPS + q]);
+    return v < 0 ? 0u : (uint32_t)v >> (8 * (i - 3 * q)) & 0xFFu;
+}
+
+void drumchapel_set_user_slot(void *state, const uint32_t *words)
+{
+    ((DrumChapelState *)state)->user = words;
+}
 uint32_t drumchapel_groove_step(int groove, int pattern, uint32_t k)
 {
     uint32_t d;
@@ -438,7 +497,8 @@ static void process(void *st, const FxParams *pr, const float *in, float *out, s
     uint32_t inc = click_bpm100(fx_param_clamp(&d[DC_TIME], pr->value[DC_TIME])) * 4u;
     int pattern = (int)fx_param_clamp(&d[DC_PATTERN], pr->value[DC_PATTERN]);
     int groove = (int)fx_param_clamp(&d[DC_GROOVE], pr->value[DC_GROOVE]);
-    uint32_t dir = BANK[groove * DRUMCHAPEL_PATTERNS + pattern];
+    uint32_t udir = groove == DRUMCHAPEL_USER_GROOVE ? user_dir(s->user, pattern) : 0u;
+    uint32_t dir = udir ? udir : BANK[(groove == DRUMCHAPEL_USER_GROOVE ? 0 : groove) * DRUMCHAPEL_PATTERNS + pattern];
     const uint32_t *kw = KW[(int)fx_param_clamp(&d[DC_KIT], pr->value[DC_KIT])];
     float lev[DRUMCHAPEL_VOICES], level;
     uint32_t thr = (uint32_t)(fx_param_clamp(&d[DC_SWING], pr->value[DC_SWING]) * DRUMCHAPEL_SWING_MAX);
@@ -461,7 +521,7 @@ static void process(void *st, const FxParams *pr, const float *in, float *out, s
             s->pend = 0;
             s->len = dir & 511u;
             while (s->step >= s->len) s->step -= s->len;
-            b = step_byte(dir, s->step);
+            b = udir ? user_step(s->user, dir, s->step) : step_byte(dir, s->step);
             hit(s, b, kw, lev);
             s->fires++;
             s->last_step = s->step;
@@ -500,3 +560,20 @@ static void process(void *st, const FxParams *pr, const float *in, float *out, s
 const FxAlgorithm fx_drumchapel = {
     "drumchapel", "Drum Chapel", sizeof(DrumChapelState), PARAMS, DC_NPARAMS, reset, process,
 };
+
+float drumchapel_ulaw(uint8_t u)
+{
+    unsigned v = (unsigned)(~u) & 0xFFu;
+    int t = (int)((((v & 0x0Fu) << 3) + 0x84u) << ((v & 0x70u) >> 4));
+    return (float)((v & 0x80u) ? 0x84 - t : t - 0x84) * (1.0f / 32768.0f);
+}
+
+float drumchapel_interp(const float *s, uint32_t n, uint32_t pos)
+{
+    uint32_t i = pos >> 16;
+    if (i >= n)
+        return 0.0f;
+    float a = s[i], b = i + 1 < n ? s[i + 1] : 0.0f;
+    float f = (float)(pos & 0xFFFFu) * (1.0f / 65536.0f);
+    return a + (b - a) * f;
+}

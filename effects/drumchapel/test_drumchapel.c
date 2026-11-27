@@ -354,6 +354,147 @@ static void acoustic(float *x, float *y)
     CHECK(peak(y, n) == 0.0, "Acoustic with Kick, Snare, Hat at 0: peak %g", peak(y, n));
 }
 
+
+/* ------------------------------------------------------------------ the user groove bank (Groove = User) */
+static uint32_t fb(float x) { uint32_t u; memcpy(&u, &x, 4); return u; }
+
+/* A User IR slot holding `n` loops (lens[k] steps each, bytes from steps[], all loops one after another), as
+   grooves.py --user writes it. */
+static void pack_user(uint32_t *w, const uint32_t *lens, int n, const uint8_t *steps)
+{
+    uint32_t total = 0, i;
+    int k;
+    memset(w, 0, 2048 * 4);
+    for (k = 0; k < n; k++) total += lens[k];
+    w[0] = fb(0.5f); w[1] = fb(-0.5f); w[2] = fb(5.0f); w[3] = fb(1.0f);
+    w[4] = fb((float)n / 2.0f);
+    w[5] = fb((float)total / 1024.0f);
+    for (k = 0, i = 0; k < n; k++) {
+        w[DCU_DIR + k] = fb((float)(i << 9 | lens[k]) / 2097152.0f);
+        i += lens[k];
+    }
+    for (i = 0; i < total; i += 3) {
+        uint32_t v = steps[i] | (i + 1 < total ? (uint32_t)steps[i + 1] << 8 : 0u) | (i + 2 < total ? (uint32_t)steps[i + 2] << 16 : 0u);
+        w[DCU_STEPS + i / 3] = fb((float)v / 2097152.0f);
+    }
+}
+
+/* Groove = User for `nsteps` steps: each step (count mod its loop's length) with the byte the loop has there. */
+static int walk_user(const FxParams *p, const uint32_t *slot, uint32_t first, uint32_t len, const uint8_t *steps, uint32_t nsteps)
+{
+    static float in[16], out[16];
+    DrumChapelState s;
+    uint32_t f = 0;
+    int wrong = 0, v;
+    fx_drumchapel.reset(&s, SR);
+    drumchapel_set_user_slot(&s, slot);
+    while (s.fires < nsteps) {
+        uint32_t h[DRUMCHAPEL_VOICES];
+        for (v = 0; v < DRUMCHAPEL_VOICES; v++) h[v] = s.hits[v];
+        fx_drumchapel.process(&s, p, in, out, 16);
+        if (s.fires == f) continue;
+        f = s.fires;
+        if (s.last_step != (f - 1) % len || s.last_byte != steps[first + s.last_step]) wrong++;
+        for (v = 0; v < DRUMCHAPEL_VOICES; v++)
+            if ((s.hits[v] != h[v]) != (int)(s.last_byte >> v & 1u)) wrong++;
+    }
+    return wrong;
+}
+
+/* 4 s of Groove g, Pattern pat with the slot (or none): the output's hash */
+static uint32_t hash_run(int g, int pat, const uint32_t *slot)
+{
+    static float in[N], out[N];
+    FxParams p;
+    DrumChapelState s;
+    setg(&p, 0.3f, g, pat, KIT_PUNCH, 0.9f, 0.8f, 0.6f);
+    fx_drumchapel.reset(&s, SR);
+    drumchapel_set_user_slot(&s, slot);
+    render(&s, &p, in, out, N, 16);
+    return fnv(out, N);
+}
+
+static void user_grooves(void)
+{
+    static uint32_t w[2048], bad[2048];
+    static uint8_t st[DCU_MAX_STEPS];
+    static const uint32_t lens[3] = { 16, 28, 44 };
+    FxParams p;
+    uint32_t i, first[3] = { 0, 16, 44 };
+    int k, pat, wrong = 0;
+    uint32_t seed = 12345;
+    for (i = 0; i < DCU_MAX_STEPS; i++) { seed = seed * 1103515245u + 12345u; st[i] = (uint8_t)(seed >> 24 & 0x7Fu); }
+    pack_user(w, lens, 3, st);
+    /* every Pattern plays loop (Pattern mod 3), step by step, wrapping at its length */
+    for (pat = 0; pat < DRUMCHAPEL_PATTERNS; pat++) {
+        setg(&p, 0.1f, DRUMCHAPEL_USER_GROOVE, pat, 0, 1, 1, 1);
+        wrong += walk_user(&p, w, first[pat % 3], lens[pat % 3], st, lens[pat % 3] * 2 + 3);
+    }
+    CHECK(wrong == 0, "user grooves: %d wrong steps over 20 patterns", wrong);
+
+    /* Classic exactly, whenever the slot is not a groove bank */
+    {
+        int bad_n = 0, cases = 0;
+        uint32_t want[3];
+        for (k = 0; k < 3; k++) want[k] = hash_run(0, 5 * k, NULL);
+        for (k = 0; k < 3; k++) bad_n += hash_run(DRUMCHAPEL_USER_GROOVE, 5 * k, NULL) != want[k], cases++;
+        static const int field[] = { 0, 1, 2, 3, 4, 4, 4, 5, 5, 5 };
+        static const float val[] = { 0.25f, -1.0f, 3.0f, 2.0f, 0.0f, 10.5f, 0.75f, 0.0f, 7.0f, 1.0f / 1024.0f };
+        for (i = 0; i < sizeof field / sizeof field[0]; i++) {
+            memcpy(bad, w, sizeof w);
+            bad[field[i]] = fb(val[i]);
+            for (k = 0; k < 3; k++) bad_n += hash_run(DRUMCHAPEL_USER_GROOVE, 5 * k, bad) != want[k], cases++;
+        }
+        CHECK(bad_n == 0, "user grooves: %d of %d runs with an empty slot or a wrong header differ from Classic", bad_n, cases);
+    }
+    /* a pattern whose directory value is not a groove inside the steps plays Classic; the others stay the user's */
+    {
+        static const float dv[] = { (float)(0u << 9 | 6u), (float)(0u << 9 | 0u), (float)(80u << 9 | 16u), (float)(0u << 9 | 388u), -1.0f, 9.0f };
+        int bad_n = 0;
+        for (i = 0; i < sizeof dv / sizeof dv[0]; i++) {
+            memcpy(bad, w, sizeof w);
+            bad[DCU_DIR + 0] = fb(dv[i] / 2097152.0f);
+            if (dv[i] < 0 || dv[i] >= 8.0f * 2097152.0f) bad[DCU_DIR + 0] = fb(dv[i]);
+            bad_n += hash_run(DRUMCHAPEL_USER_GROOVE, 0, bad) != hash_run(0, 0, NULL);
+            bad_n += hash_run(DRUMCHAPEL_USER_GROOVE, 1, bad) != hash_run(DRUMCHAPEL_USER_GROOVE, 1, w);
+        }
+        CHECK(bad_n == 0, "user grooves: %d runs wrong with a bad directory value", bad_n);
+    }
+    /* a step sample that is not a value 0 <= v < 8 plays nothing there */
+    {
+        static const float sv[] = { -0.5f, 8.0f, 1e30f };
+        uint8_t st2[DCU_MAX_STEPS];
+        int bad_n = 0;
+        for (i = 0; i < 3; i++) {
+            memcpy(bad, w, sizeof w);
+            memcpy(st2, st, sizeof st2);
+            bad[DCU_STEPS + 1] = fb(sv[i]);
+            st2[3] = st2[4] = st2[5] = 0;
+            setg(&p, 0.1f, DRUMCHAPEL_USER_GROOVE, 0, 0, 1, 1, 1);
+            bad_n += walk_user(&p, bad, 0, 16, st2, 40);
+        }
+        uint32_t nanb = 0x7FC00000u;
+        memcpy(bad, w, sizeof w);
+        bad[DCU_STEPS + 1] = nanb;
+        memcpy(st2, st, sizeof st2);
+        st2[3] = st2[4] = st2[5] = 0;
+        bad_n += walk_user(&p, bad, 0, 16, st2, 40);
+        CHECK(bad_n == 0, "user grooves: %d wrong steps with a step sample out of range", bad_n);
+    }
+    /* the fullest bank: 20 loops, 6,056 steps, its last loop's last step read from the slot's last samples */
+    {
+        static uint32_t big[2048];
+        uint32_t L[20], f0 = 0;
+        for (k = 0; k < 20; k++) L[k] = k < 15 ? 384 : (k < 19 ? 64 : DCU_MAX_STEPS - 15 * 384 - 4 * 64 - (DCU_MAX_STEPS - 15 * 384 - 4 * 64) % 4);
+        for (k = 0; k < 20; k++) f0 += L[k];
+        pack_user(big, L, 20, st);
+        CHECK(big[2047] == 0 && f0 <= DCU_MAX_STEPS, "the fullest bank fits: %u steps, sample 2047 %#x", f0, big[2047]);
+        setg(&p, 0.1f, DRUMCHAPEL_USER_GROOVE, 19, 0, 1, 1, 1);
+        CHECK(walk_user(&p, big, f0 - L[19], L[19], st, L[19] + 5) == 0, "the fullest bank's last loop (%u steps) plays", L[19]);
+    }
+    printf("  user grooves: 20 patterns, fallbacks to Classic, out-of-range values\n");
+}
+
 int main(void)
 {
     float *x = calloc(N, sizeof *x), *y = malloc(N * sizeof *y), *z = malloc(N * sizeof *z);
@@ -769,6 +910,9 @@ int main(void)
 
     /* 14. Acoustic: its kick and snare play the samples (or Punch's synthesised ones without samples_data.h) */
     acoustic(x, y);
+
+    /* 15. the user groove bank in an IR slot (Groove = User) */
+    user_grooves();
 
     printf("%d checks, %d failures\n", checks, failures);
     free(x); free(y); free(z);

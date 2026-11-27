@@ -2,6 +2,12 @@
 """grooves.py - turn a folder of MIDI drum loops into Drum Chapel's groove data (effects/drumchapel/grooves_data.h).
 
 usage: grooves.py FOLDER [-o grooves_data.h] [--stats]
+       grooves.py --user FOLDER [-o user_grooves.wav] [--stats]
+
+--user: your own loops for Groove = User. Up to 20 MIDI files from FOLDER, in name order (Pattern 1..20, mod their
+number), into one .wav for User IR slot 128 (drumchapel.h, "The user groove bank"; send it with
+tools/ir_upload.py or HX Edit). The same conversion as below, with no families: each loop is padded with empty
+steps to a multiple of 4 sixteenths (the swing's odd steps), and all of them together hold at most 6,057 steps.
 
 The output is committed with the repository. Without it the reference, the kernel check and the image build
 still work, with the Classic patterns only (drumchapel.h).
@@ -149,6 +155,59 @@ def families(folder):
     return out, stats
 
 
+# = drumchapel.h: the user groove bank in one User IR slot
+USER_DIR, USER_STEPS, USER_MAX_STEPS, USER_SLOT = 8, 28, 3 * (2047 - 28), 128
+SCALE = 2.0 ** -21
+
+
+def user_bank(loops):
+    """The 2,048 float32 samples (as their bits) of the user groove bank holding `loops` (lists of step bytes)."""
+    if not 1 <= len(loops) <= MAX_VARIATIONS:
+        raise ValueError(f'{len(loops)} loops: the Pattern knob has {MAX_VARIATIONS}')
+    steps, dirs = [], []
+    for v in loops:
+        if not 4 <= len(v) <= MAX_STEPS or len(v) % 4:
+            raise ValueError(f'a loop of {len(v)} steps (4..{MAX_STEPS}, a multiple of 4)')
+        dirs.append(len(steps) << 9 | len(v))
+        steps += [b & 0xFF for b in v]
+    if len(steps) > USER_MAX_STEPS:
+        raise ValueError(f'{len(steps)} steps in all: one IR slot holds {USER_MAX_STEPS}')
+    vals = [((steps[i] if i < len(steps) else 0) | (steps[i + 1] if i + 1 < len(steps) else 0) << 8 |
+             (steps[i + 2] if i + 2 < len(steps) else 0) << 16) for i in range(0, len(steps), 3)]
+    check = sum(dirs + vals) & 0x1FFFFF
+    out = [0.5, -0.5, 5.0, 1.0, len(loops) / 2.0, len(steps) / 1024.0, check * SCALE, 0.0]
+    out += [d * SCALE for d in dirs] + [0.0] * (20 - len(dirs))
+    out += [v * SCALE for v in vals]
+    out += [0.0] * (2048 - len(out))
+    assert len(out) == 2048 and out[2047] == 0.0 and max(abs(x) for x in out) < 8.0
+    return [struct.unpack('<I', struct.pack('<f', x))[0] for x in out]
+
+
+def write_ir_wav(path, words, rate=48000):
+    """A mono 32-bit float .wav of the samples (float bits), as a User IR."""
+    data = struct.pack('<%dI' % len(words), *words)
+    fmt = struct.pack('<HHIIHH', 3, 1, rate, rate * 4, 4, 32)
+    body = b'WAVE' + b'fmt ' + struct.pack('<I', len(fmt)) + fmt + b'data' + struct.pack('<I', len(data)) + data
+    with open(path, 'wb') as f:
+        f.write(b'RIFF' + struct.pack('<I', len(body)) + body)
+
+
+def user_loops(folder, stats):
+    """Up to 20 loops from the MIDI files in folder, in natural name order, each padded to a multiple of 4 steps."""
+    key = lambda f: [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', f)]
+    names = sorted((f for f in os.listdir(folder) if f.lower().endswith(('.mid', '.midi'))), key=key)
+    if not names:
+        raise ValueError(f'no MIDI files in {folder}')
+    if len(names) > MAX_VARIATIONS:
+        raise ValueError(f'{len(names)} MIDI files in {folder}: the Pattern knob has {MAX_VARIATIONS}')
+    loops = []
+    for f in names:
+        v = convert(os.path.join(folder, f), stats)
+        v += [0] * (-len(v) % 4)
+        loops.append(v)
+    return names, loops
+
+
 def header(fams):
     lens = [len(v) for fam in fams for v in fam]
     steps = [s for fam in fams for v in fam for s in v]
@@ -164,6 +223,24 @@ def header(fams):
 
 def main():
     a = sys.argv[1:]
+    if a[:1] == ['--user'] and len(a) > 1:
+        out = a[a.index('-o') + 1] if '-o' in a else 'user_grooves.wav'
+        stats = {}
+        try:
+            names, loops = user_loops(a[1], stats)
+            words = user_bank(loops)
+        except ValueError as ex:
+            sys.exit(f'grooves.py: {ex}')
+        write_ir_wav(out, words)
+        total = sum(map(len, loops))
+        print(f'grooves.py: {len(loops)} loops, {total} steps of {USER_MAX_STEPS} -> {out} (for User IR slot {USER_SLOT}: '
+              f'Groove = User, Pattern 1..{len(loops)})')
+        for k, (f, v) in enumerate(zip(names, loops)):
+            print(f'  Pattern {k + 1:2d}: {f} ({len(v)} sixteenths)')
+        if '--stats' in a:
+            print(f'  {stats.get("hits", 0)} hits ({stats.get("off", 0)} not on a sixteenth), {stats.get("ghost", 0)} ghosts '
+                  f'dropped, other notes dropped: {stats.get("dropped", {})}')
+        return
     if not a or a[0].startswith('-'):
         sys.exit(__doc__)
     out = a[a.index('-o') + 1] if '-o' in a else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'grooves_data.h')

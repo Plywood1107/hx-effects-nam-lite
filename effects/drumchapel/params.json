@@ -10,6 +10,6 @@
     {"id": "hat", "display": "Hat", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "x (shown as %)", "smoothing": "next hit"},
     {"id": "swing", "display": "Swing", "type": "continuous", "min": 0, "max": 1, "default": 0, "unit": "x 1/3 sixteenth on odd sixteenths", "smoothing": "immediate"},
     {"id": "level", "display": "Level", "type": "continuous", "min": 0, "max": 1, "default": 0.5, "unit": "x (shown as %)", "smoothing": "immediate"},
-    {"id": "groove", "display": "Groove", "type": "integer", "min": 0, "max": 11, "default": 0, "unit": "", "smoothing": "next step"}
+    {"id": "groove", "display": "Groove", "type": "integer", "min": 0, "max": 12, "default": 0, "unit": "12 User (IR slot 128)", "smoothing": "next step"}
   ]
 }

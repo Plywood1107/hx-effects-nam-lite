@@ -10,7 +10,13 @@
 // voice plays, from its kit's first word).
 //
 // Knob words: DM(5) Time s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..6), DM(8) Kick 0..1,
-//             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1, DM(14) Groove (int 0..11).
+//             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1, DM(14) Groove (int 0..12).
+//
+// Groove 12, User: the user's bank in User IR slot USER_SLOT, read where it is in the IR store (drumchapel.h, "The
+// user groove bank"; IR_FLAG, USER_TOP: sample j at USER_TOP - j). Each call with Groove on User checks the slot's
+// flag and header and the pattern's directory value (u_dir), keeping a valid one in the slot (ST_UDIR) for the step
+// to read as it reads the bank's; a step then reads its byte from the slot's sample (one read). Anything not valid
+// plays Classic, as the reference does.
 //
 // The grooves are a read-only bank in DDR2 (inside Blob 0, at T_DIR; drumchapel.h): a directory word per
 // Groove x Pattern, (first step << 9) | length, then the steps, four bytes to a word from T_STEPS. Read only
@@ -172,21 +178,36 @@ k_divn:
     CALL g_cl;
     F4 = PASS F15;
 
-    R9 = DM(14, I0);                    // Groove 0..11, Pattern 0..19 -> their directory word's address (R14)
-    R8 = 0;
-    R9 = MAX(R9, R8);
-    R8 = 11;
-    R9 = MIN(R9, R8);
-    R8 = 20;
-    R9 = R9 * R8 (UUI);
-    R14 = DM(6, I0);
+    R14 = DM(6, I0);                    // Pattern 0..19, Groove 0..12 -> their directory word's address (R14)
     R8 = 0;
     R14 = MAX(R14, R8);
     R8 = 19;
     R14 = MIN(R14, R8);
+    R9 = DM(14, I0);
+    R8 = 0;
+    R9 = MAX(R9, R8);
+    R8 = USER_GROOVE;
+    R9 = MIN(R9, R8);
+    R15 = 0;                            // 1: the steps are the user's (in the IR slot)
+    COMP(R9, R8);
+    IF NE JUMP g_bank;
+    CALL u_dir;                         // User: R7 its directory value for this pattern, 0 to play Classic
+    R9 = 0;
+    R7 = PASS R7;
+    IF EQ JUMP g_bank;
+    DM(ST_UDIR, I3) = R7;
+    R14 = ST_UDIR;
+    R8 = I3;
+    R14 = R14 + R8;                     // the directory word is the slot's copy
+    R15 = 1;
+    JUMP g_done;
+g_bank:
+    R8 = 20;
+    R9 = R9 * R8 (UUI);
     R14 = R14 + R9;
     R8 = T_DIR;
     R14 = R14 + R8;
+g_done:
 
     // ---- the tempo for this call: which sample (if any) a step fires on, and its byte -> R2 = count << 8 | byte
     R8 = DM(ST_ACC, I3);
@@ -216,6 +237,8 @@ p_mod:                                  // the step mod the length (a groove cha
     JUMP p_mod;
 p_byte:
     R11 = R11 + R9;                     // its byte: the step's index in the bank -> word, byte in it
+    R15 = PASS R15;
+    IF NE JUMP p_user;
     R3 = LSHIFT R11 BY -2;
     R10 = T_STEPS;
     R3 = R3 + R10;
@@ -228,6 +251,7 @@ p_byte:
     R3 = LSHIFT R3 BY R11;
     R10 = 255;
     R3 = R3 AND R10;
+p_tail:
     R2 = LSHIFT R6 BY 8;
     R2 = R2 OR R3;
     R10 = 0;
@@ -616,4 +640,127 @@ g_cl:
     F15 = MAX(F15, F8);
     F8 = 1.0;
     F15 = MIN(F15, F8);
+    RTS;
+
+// ---- the user bank's step i (R11): byte i - 3q of sample DCU_STEPS + q, q = i / 3 = i x 43691 >> 17; 0 when the
+// sample is not a value 0 <= v < 8 (drumchapel.c user_step). Back to p_tail with the byte in R3. Uses R3, R10, R11.
+p_user:
+    R3 = 43691;
+    R3 = R3 * R11 (UUI);
+    R3 = LSHIFT R3 BY -17;
+    R10 = R3 + R3;
+    R10 = R10 + R3;
+    R11 = R11 - R10;
+    R10 = USER_TOP - DCU_STEPS;
+    R10 = R10 - R3;
+    I4 = R10;
+    F3 = DM(0, I4);                     // (DDR2) three steps
+    F10 = 0.0;
+    COMP(F3, F10);
+    IF LT JUMP p_ubad;
+    F10 = 8.0;
+    COMP(F3, F10);
+    IF GE JUMP p_ubad;
+    F10 = 2097152.0;
+    F3 = F3 * F10;
+    R3 = TRUNC F3;
+    R11 = LSHIFT R11 BY 3;
+    R11 = -R11;
+    R3 = LSHIFT R3 BY R11;
+    R10 = 255;
+    R3 = R3 AND R10;
+    JUMP p_tail;
+p_ubad:
+    R3 = 0;
+    JUMP p_tail;
+
+// ---- Groove = User: R7 = the user bank's directory value for Pattern R14, or 0 (the slot empty or not a groove
+// bank, or the value not a groove inside its steps: play Classic), as drumchapel.c user_dir. Uses R2, R3, R6, R7,
+// R8, R10-R13 and I4; reads the slot's flag and at most seven samples (DDR2).
+u_dir:
+    R7 = 0;
+    R8 = IR_FLAG + USER_SLOT - 1;
+    I4 = R8;
+    R8 = DM(0, I4);
+    R8 = PASS R8;
+    IF EQ RTS;
+    I4 = USER_TOP;
+    F8 = DM(0, I4);
+    F10 = 0.5;
+    COMP(F8, F10);
+    IF NE RTS;
+    F8 = DM(-1, I4);
+    F10 = -0.5;
+    COMP(F8, F10);
+    IF NE RTS;
+    F8 = DM(-2, I4);
+    F10 = 5.0;
+    COMP(F8, F10);
+    IF NE RTS;
+    F8 = DM(-3, I4);
+    F10 = 1.0;
+    COMP(F8, F10);
+    IF NE RTS;
+    F8 = DM(-4, I4);                    // the loops: x 2, 1..20 (a NaN fails both compares), a whole number (R12)
+    F10 = 2.0;
+    F8 = F8 * F10;
+    F10 = 1.0;
+    COMP(F8, F10);
+    IF LT RTS;
+    F10 = 20.0;
+    COMP(F8, F10);
+    IF GT RTS;
+    R12 = TRUNC F8;
+    F10 = FLOAT R12;
+    COMP(F10, F8);
+    IF NE RTS;
+    F8 = DM(-5, I4);                    // the steps: x 1024, 4..DCU_MAX_STEPS, a whole number (R13)
+    F10 = 1024.0;
+    F8 = F8 * F10;
+    F10 = 4.0;
+    COMP(F8, F10);
+    IF LT RTS;
+    F10 = 6057.0;                       // DCU_MAX_STEPS (asserted by drumchapel_kernel.py)
+    COMP(F8, F10);
+    IF GT RTS;
+    R13 = TRUNC F8;
+    F10 = FLOAT R13;
+    COMP(F10, F8);
+    IF NE RTS;
+    R11 = PASS R14;                     // Pattern mod the loops
+u_mod:
+    COMP(R11, R12);
+    IF LT JUMP u_val;
+    R11 = R11 - R12;
+    JUMP u_mod;
+u_val:
+    R10 = USER_TOP - DCU_DIR;
+    R10 = R10 - R11;
+    I4 = R10;
+    F8 = DM(0, I4);                     // its directory value, x 2^-21
+    F10 = 0.0;
+    COMP(F8, F10);
+    IF LT RTS;
+    F10 = 8.0;
+    COMP(F8, F10);
+    IF GE RTS;
+    F10 = 2097152.0;
+    F8 = F8 * F10;
+    R2 = TRUNC F8;
+    R10 = 511;
+    R3 = R2 AND R10;                    // its length: 4..DRUMCHAPEL_MAX_STEPS, a multiple of 4
+    R10 = 4;
+    COMP(R3, R10);
+    IF LT RTS;
+    R10 = 384;
+    COMP(R3, R10);
+    IF GT RTS;
+    R10 = 3;
+    R10 = R3 AND R10;
+    IF NE RTS;
+    R6 = LSHIFT R2 BY -9;               // and it ends inside the steps
+    R6 = R6 + R3;
+    COMP(R6, R13);
+    IF GT RTS;
+    R7 = PASS R2;
     RTS;

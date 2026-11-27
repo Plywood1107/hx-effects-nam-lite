@@ -1,18 +1,22 @@
 #!/bin/sh
 # deploy_pages.sh - make the website (branch gh-pages) from the current commit: web/ at the top, the preset builder in
-# preset-builder/. Only committed files go up, never the working tree. Then push it: git push origin gh-pages
+# preset-builder/, the groove editor in groove-editor/. Only committed files go up, never the working tree. Then push it: git push origin gh-pages
 #
 # The site was a `git subtree split --prefix web`; the preset builder lives in tools/preset-builder/ (its page finds
 # flasher.js one folder up on the site), so the site is now assembled here instead, one commit on top of gh-pages.
 set -e
 cd "$(git rev-parse --show-toplevel)"
 BUILDER="index.html preset-core.js fw-reader.js fw-catalog.js README.md"
+EDITOR="index.html groove-core.js beats.js"            # and every file in tools/groove-editor/sounds/
 
 idx="$(mktemp -d)/index"
 export GIT_INDEX_FILE="$idx"
 git read-tree HEAD:web
 for f in $BUILDER; do
   git update-index --add --cacheinfo "100644,$(git rev-parse "HEAD:tools/preset-builder/$f"),preset-builder/$f"
+done
+for f in $EDITOR $(git ls-tree --name-only HEAD tools/groove-editor/sounds/ | sed 's|^tools/groove-editor/||'); do
+  git update-index --add --cacheinfo "100644,$(git rev-parse "HEAD:tools/groove-editor/$f"),groove-editor/$f"
 done
 tree=$(git write-tree)
 unset GIT_INDEX_FILE

@@ -364,6 +364,7 @@ class Flow:
         self.name, self.knobs, self.int_knobs, self.order = spec.name, spec.knobs, spec.int_knobs, spec.order
         self.slotw, self.nslots, self.entry, self.max_cycles = spec.slotw, spec.nslots, f'OVL_ENTRY_{name}', 20000
         self.places = SPEC.places
+        self.i3, self.ref_setup = getattr(spec, 'i3', None), getattr(spec, 'ref_setup', None)
 
     def assemble(self, place):
         src = 0x3E0000

@@ -61,7 +61,9 @@ enum { DC_TIME, DC_PATTERN, DC_KIT, DC_KICK, DC_SNARE, DC_HAT, DC_SWING, DC_LEVE
 #define DRUMCHAPEL_DEFS 5
 #define DRUMCHAPEL_STEPS 16                  /* a Classic pattern */
 #define DRUMCHAPEL_PATTERNS 20               /* the Pattern knob */
-#define DRUMCHAPEL_GROOVES 12                /* the Groove knob: Classic and 11 families */
+#define DRUMCHAPEL_GROOVES 12                /* the bank's grooves: Classic and 11 families */
+#define DRUMCHAPEL_USER_GROOVE 12            /* the Groove knob's last entry: the user's bank in an IR slot (below) */
+#define DRUMCHAPEL_USER_SLOT 128             /* that User IR slot */
 #define DRUMCHAPEL_MAX_STEPS 384             /* the longest groove, sixteenths (24 bars of 4/4) */
 #define DRUMCHAPEL_DIR_WORDS (DRUMCHAPEL_GROOVES * DRUMCHAPEL_PATTERNS)
 #define DRUMCHAPEL_KITS 7
@@ -86,6 +88,20 @@ enum { TOM_HIGH, TOM_MID, TOM_LOW, TOM_FLOOR };
 #define DC_B_OPEN 16u
 #define DC_B_PITCH 5
 
+/* The user groove bank (Groove = User): one User IR slot (DRUMCHAPEL_USER_SLOT) of 2,048 float samples, written by
+ * grooves.py --user from up to 20 MIDI loops (Pattern 1..20, mod their number), read where it is, when a step falls:
+ *   0..3   0.5, -0.5, 5.0 (a groove bank), 1.0 (version)        (NAM A2 Lite's captures have 3.0 at 2: it skips this)
+ *   4      the loops (1..20) / 2       5  the steps in all (4..DCU_MAX_STEPS) / 1024       6  a check, unused here   7  0
+ *   8..27  each loop's directory value (first step << 9 | length, the bank's form), x 2^-21; 0 after the last
+ *   28..   the steps, three to a sample: value (byte 3j | 3j+1 << 8 | 3j+2 << 16) x 2^-21; the rest 0
+ * Every value is an integer under 2^24 times 2^-21 (exact, under 8: inside HX Edit's +-15.8). Groove = User plays
+ * Classic (Pattern's bar) when the slot is empty or its header is not this one, and plays a pattern whose
+ * directory value is not a length of 4..DRUMCHAPEL_MAX_STEPS (a multiple of 4) inside the steps as Classic too.
+ * A step whose sample is not a value 0 <= v < 8 plays nothing. */
+#define DCU_DIR 8
+#define DCU_STEPS 28
+#define DCU_MAX_STEPS (3 * (2047 - DCU_STEPS))      /* 6,057 */
+
 /* A kit's words: kit-wide first, then each definition's DV_WORDS. Floats are stored as their bits; HOLD, GATE are integers. */
 enum { DK_DRIVE, DK_COMP, DK_TDRIVE, DK_M2, DK_HOLD, DK_GATE, DK_V0 };
 enum { DV_INC, DV_SWEEP, DV_PD, DV_TD, DV_ND, DV_TLEV, DV_NLEV, DV_NF, DV_WORDS };
@@ -103,6 +119,8 @@ typedef struct {
 typedef struct {
     uint32_t acc, step, pend, rnd, hcnt;   /* tempo phase, the step due, whether it is still to fire; noise */
     uint32_t len;                          /* the groove's length when the last step fell */
+    const uint32_t *user;                  /* the user groove slot's 2,048 samples (float bits), 0 if empty: the
+                                              host's IR store, set by drumchapel_set_user_slot (the kernel reads it) */
     DrumVoice v[DRUMCHAPEL_VOICES];
     /* bookkeeping the tests read (not in the SHARC port's state) */
     uint32_t fires, last_step, last_byte, hits[DRUMCHAPEL_VOICES], opens;
@@ -125,6 +143,14 @@ int drumchapel_sampled(void);                       /* 1: samples_data.h was the
 uint32_t drumchapel_sample_first(int voice);        /* KICK or SNARE: its first index in the table, and length */
 uint32_t drumchapel_sample_len(int voice);
 float drumchapel_sample(uint32_t i);                /* table sample i, as a float (q / 32768) */
+/* The packed sample format under test (2026-11-27, Part A): an 8-bit mu-law byte (G.711, its bits inverted) -> its
+   value / 32768 (exact in a float); and the linear interpolation at position pos (16.16 fixed point) of n samples
+   s[], 0 past the end: how a 24 kHz sample plays at 48 kHz (pos += 0x8000 a sample) or at a tom's rate. */
+float drumchapel_ulaw(uint8_t u);
+float drumchapel_interp(const float *s, uint32_t n, uint32_t pos);
+/* The User IR slot the user groove bank is read from (2,048 float bits, sample 0 first; 0: an empty slot). The
+   reference cannot see the unit's IR store: the tests and the kernel check give it the slot this way. */
+void drumchapel_set_user_slot(void *state, const uint32_t *words);
 const char *drumchapel_pattern_name(int p);
 const char *drumchapel_kit_name(int kit);
 extern const float drumchapel_r2, drumchapel_third, drumchapel_silent, drumchapel_gate_k, drumchapel_xf;

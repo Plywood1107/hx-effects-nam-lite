@@ -262,11 +262,24 @@ a family the folder lacks). The converter quantises every hit to the nearest six
 length and meter (up to 384 sixteenths), drops ghost notes (velocity under 40) and maps the kit's notes to the
 voices (its docstring has the map: cymbals and open hats play the hat voice with the open decay; four tom pitches).
 
-**Knobs.** Time (the host delay's, synced to tap tempo), Groove (list: Classic + 11 families), Pattern ("1".."20":
+**User grooves (Groove 12, User; 2026-11-27).** The user's own patterns, up to 20, in User IR slot 128 (`drumchapel.h`,
+"The user groove bank"), read where they are in the unit's IR store when a step falls: no copy, no buffer. The slot
+is 2,048 float samples: 0.5, -0.5, 5.0 (a groove bank; NAM's captures have 3.0 there), 1.0 (version), loops / 2,
+steps / 1024, a check, 0; each loop's directory value (the bank's form) x 2^-21 from sample 8; the steps three to a
+sample (24-bit values x 2^-21, exact, under 8: inside HX Edit's limit) from sample 28; at most 6,057 steps in all.
+Pattern picks the loop (mod their number). An empty slot, another header, or a pattern whose directory value is not
+a groove of 4..384 steps (a multiple of 4) inside the steps plays Classic; a step sample that is not a value
+0 <= v < 8 plays nothing. Made by `drumchapel/grooves.py --user FOLDER` from MIDI loops, or by the groove editor
+(`tools/groove-editor/`, the same bytes: `check_core.py`). Tests (section 15): every pattern step by step, the
+fallbacks to Classic (hashes of whole runs), bad values, the fullest bank. The kernel reads the slot's flag and up to
+seven header samples a call while Groove is User, and one sample a step; `drumchapel_kernel.py --check` runs the
+check's own slot (five loops) and thirteen broken slots against the reference.
+
+**Knobs.** Time (the host delay's, synced to tap tempo), Groove (list: Classic + 11 families + User), Pattern ("1".."20":
 the Classic pattern, or the family's variation, Pattern mod its size), Kit (Boom, Punch, Tick, Bit, Doom, Eighty, Acoustic),
 Kick (also the toms' level), Snare, Hat, Swing (odd sixteenths late by up to a third), Level. Knob words: DM(5) Time
 s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..6), DM(8) Kick, DM(9) Snare, DM(10) Hat, DM(11) Swing,
-DM(13) Level (0..1), DM(14) Groove (int 0..11).
+DM(13) Level (0..1), DM(14) Groove (int 0..12).
 
 **Playing a groove.** The step counter wraps at the groove's length. A step looks its groove up when it falls and
 continues at (step mod the new length), so Groove or Pattern changes mid-play never restart the count or move the

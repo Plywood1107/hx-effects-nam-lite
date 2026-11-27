@@ -183,7 +183,7 @@ DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty', 'Acoustic']
 # (effects/drumchapel/samples.py; samples_data.h, Punch's synthesised ones without it)
 # Groove 0 plays the 20 patterns above; 1..11 the families converted by effects/drumchapel/grooves.py (Classic when
 # its git-ignored output is missing), Pattern then the variation (mod the family's size)
-DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES]
+DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES] + ['User']   # User: User IR slot 128 (grooves.py --user)
 DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_params); the kernel reads words 5..11, 13, 14
     (2, 14, 'HD2_TremoloPatternMono', 'Step1', 'Groove', 'Groove', LIST, dict(enumerate(DRUMCHAPEL_GROOVES)), 0),
     (3, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Pattern', 'Pattern', LIST, {k: str(k + 1) for k in range(20)}, 0),
@@ -194,7 +194,7 @@ DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_par
     (8, 11, 'HD2_AmpLine6Clarity', 'Presence', 'Swing', 'Swing', 'percent', (0.0, 1.0), 0.0),
     (9, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.5),
 )
-assert len(DRUMCHAPEL_GROOVES) == 12 and len(DRUMCHAPEL_KITS) == 7
+assert len(DRUMCHAPEL_GROOVES) == 13 and len(DRUMCHAPEL_KITS) == 7
 PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
     (1, 5,  'HD2_FM4SynthOMatic', 'Wave', 'Mode', 'Mode', LIST,
      {0: 'Repeat', 1: 'Random', 2: 'Reverse', 3: 'Trigger', 4: 'Sq Trigger', 5: 'Square', 6: 'Up', 7: 'Down'}, 0),
