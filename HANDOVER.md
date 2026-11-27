@@ -326,8 +326,12 @@ cleared). The same line comes before `hci_didClearModel` in a log with no cabs (
 so it is not the cabs'. **All the cab tests pass.**
 The Acoustic kit (not the cabs) also passed its listening test on this image: "the acoustic kit is fine".
 
+**Setup page (2026-11-27):** `web/recipe-full.bin` is now made from 930bc33e (`tools/recipe.py apply` on the stock
+file reproduces its MD5), so NAM + Amps + Effects includes the cabs; the page's text says so (step 2 and step 6).
+`recipe-amps.bin` is unchanged (no cabs): an amps image with cabs has not been tested on the unit.
+
 **Not done:** the preset builder (`tools/preset-builder/make_catalog.js` regeneration for the 41 items, the cab
-block's Mic sub-slot, string 0x806, and an LED colour for the cab type) and the setup page.
+block's Mic sub-slot, string 0x806, and an LED colour for the cab type); the amps recipe with cabs.
 
 ## Open / next
 
