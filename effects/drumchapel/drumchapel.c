@@ -14,20 +14,34 @@
 #define DC_GROOVE_FAMILIES 0
 #define DC_GROOVE_TOTAL 0
 #endif
-/* the Acoustic kit's kick and snare (samples.py): optional */
+/* the Acoustic kit's hits (samples.py): optional, each voice on its own */
 #if defined(__has_include)
 #if __has_include("samples_data.h")
 #include "samples_data.h"
 #endif
 #endif
-#ifdef DC_SAMPLE_KICK_N
-#define SAMPLED 1
-#define SAMP_SNARE0 (DC_SAMPLE_KICK_N + (DC_SAMPLE_KICK_N & 1))      /* the snare from a word's low half */
-#define SAMP_WORDS ((SAMP_SNARE0 + DC_SAMPLE_SNARE_N + 1) / 2)
-#else
-#define SAMPLED 0
-#define SAMP_WORDS 1
+#ifndef DC_SAMPLE_KICK_N
+#define DC_SAMPLE_KICK_N 0
+#define DC_SAMPLE_KICK 0
 #endif
+#ifndef DC_SAMPLE_SNARE_N
+#define DC_SAMPLE_SNARE_N 0
+#define DC_SAMPLE_SNARE 0
+#endif
+#ifndef DC_SAMPLE_HAT_N
+#define DC_SAMPLE_HAT_N 0
+#define DC_SAMPLE_HAT 0
+#endif
+#ifndef DC_SAMPLE_TOM_N
+#define DC_SAMPLE_TOM_N 0
+#define DC_SAMPLE_TOM 0
+#endif
+#ifndef DC_SAMPLE_OPEN_N
+#define DC_SAMPLE_OPEN_N 0
+#define DC_SAMPLE_OPEN 0
+#endif
+#define SAMP_BYTES (DC_SAMPLE_KICK_N + DC_SAMPLE_SNARE_N + DC_SAMPLE_HAT_N + DC_SAMPLE_TOM_N + DC_SAMPLE_OPEN_N)
+#define SAMP_WORDS (SAMP_BYTES ? (SAMP_BYTES + 3) / 4 : 1)
 
 #define PI 3.14159265358979323846
 #define RATE 48000.0
@@ -121,13 +135,22 @@ static const KitDef KIT[DRUMCHAPEL_KITS] = {
         { 0.0, 0.0, 0.010, 0.020, 0.020, 0.15, 0.50, -8000.0 },       /* crisp, short */
         { 500.0, 140.0, 0.060, 0.250, 0.010, 0.90, 0.30, -2000.0 },   /* a synth-drum sweep */
         { 0.0, 0.0, 0.010, 0.060, 0.350, 0.20, 0.50, -7000.0 } } },
-    { "Acoustic", 0.25, 1.0 / (1.5 * 0.25), 1.0, 0.35, 1, 0.0, {  /* sampled kick and snare (Punch's without the samples) */
-        { 400.0, 55.0, 0.008, 0.180, 0.004, 1.00, 0.40, -2000.0 },    /* = Punch's (the fallback) */
-        { 300.0, 200.0, 0.010, 0.060, 0.120, 0.45, 0.70, -2500.0 },   /* = Punch's (the fallback) */
+    { "Acoustic", 0.25, 1.0 / (1.5 * 0.25), 1.0, 0.35, 1, 0.0, {  /* sampled; these are the fallbacks without a hit */
+        { 400.0, 55.0, 0.008, 0.180, 0.004, 1.00, 0.40, -2000.0 },    /* = Punch's */
+        { 300.0, 200.0, 0.010, 0.060, 0.120, 0.45, 0.70, -2500.0 },   /* = Punch's */
         { 0.0, 0.0, 0.010, 0.025, 0.040, 0.30, 0.60, -7000.0 },       /* a little metal under the noise */
         { 190.0, 150.0, 0.040, 0.260, 0.025, 0.90, 0.15, 2500.0 },    /* a short drop, a dark skin noise */
         { 0.0, 0.0, 0.010, 0.045, 0.070, 0.21, 0.42, -7000.0 } } },   /* the closed hat a little open: its tone, 1.75 x its decay, 0.7 x its level */
 };
+
+/* Acoustic's sampled hits (each at full scale in the table): how loud each plays at its knob's 1 (its TLEV word).
+   The hats sit 6 dB under the drums, about where a kit's overheads put them; 1.2 puts the kit's rms and peaks at the
+   default knobs among the other kits'. */
+static const double SAMPLE_GAIN[DRUMCHAPEL_DEFS] = { 1.2, 1.2, 0.6, 1.2, 0.6 };
+static const unsigned char *const SAMPLE_DATA[DRUMCHAPEL_DEFS] = {
+    DC_SAMPLE_KICK, DC_SAMPLE_SNARE, DC_SAMPLE_HAT, DC_SAMPLE_TOM, DC_SAMPLE_OPEN };
+static const uint32_t SAMPLE_N[DRUMCHAPEL_DEFS] = {
+    DC_SAMPLE_KICK_N, DC_SAMPLE_SNARE_N, DC_SAMPLE_HAT_N, DC_SAMPLE_TOM_N, DC_SAMPLE_OPEN_N };
 
 /* 808 metal: 205.3, 304.4, 369.6, 522.7, 540, 800 Hz */
 static const double METAL_HZ[DRUMCHAPEL_METAL] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0 };
@@ -144,7 +167,7 @@ const float drumchapel_xf = 1.0f / DRUMCHAPEL_XF;   /* a retriggered sample's fa
 #define CLASSIC_STEPS (DRUMCHAPEL_PATTERNS * DRUMCHAPEL_STEPS)
 #define BANK_WORDS (DRUMCHAPEL_DIR_WORDS + (CLASSIC_STEPS + DC_GROOVE_TOTAL + 3) / 4)
 
-static uint32_t KW[DRUMCHAPEL_KITS][DK_WORDS], MI[DRUMCHAPEL_METAL], TUNE[4], BANK[BANK_WORDS], SAMP[SAMP_WORDS];
+static uint32_t KW[DRUMCHAPEL_KITS][DK_WORDS], MI[DRUMCHAPEL_METAL], TUNE[4], TSTEP[4], BANK[BANK_WORDS], SAMP[SAMP_WORDS];
 static float TUNE_F[4];
 static int built;
 
@@ -205,6 +228,7 @@ static void build(void)
     for (k = 0; k < 4; k++) {
         TUNE[k] = fbits(TUNE_X[k]);
         TUNE_F[k] = (float)TUNE_X[k];
+        TSTEP[k] = (uint32_t)(TUNE_X[k] * 32768.0 + 0.5);
     }
     for (k = 0; k < DRUMCHAPEL_KITS; k++) {
         const KitDef *d = &KIT[k];
@@ -229,20 +253,19 @@ static void build(void)
             q[DV_NF] = fbits(e->fc < 0.0 ? -a : a);
         }
     }
-#if SAMPLED
-    /* the sample table: the kick, then the snare from a word's low half; Acoustic's kick and snare play them */
+    /* the sample table: each hit's bytes after the last; Acoustic's definitions with a hit play it */
     memset(SAMP, 0, sizeof SAMP);
-    for (k = 0; k < DC_SAMPLE_KICK_N; k++)
-        SAMP[k / 2] |= (uint32_t)(uint16_t)DC_SAMPLE_KICK[k] << (16 * (k % 2));
-    for (k = 0; k < DC_SAMPLE_SNARE_N; k++)
-        SAMP[(SAMP_SNARE0 + k) / 2] |= (uint32_t)(uint16_t)DC_SAMPLE_SNARE[k] << (16 * ((SAMP_SNARE0 + k) % 2));
-    for (v = 0; v < 2; v++) {
-        uint32_t *q = KW[KIT_ACOUSTIC] + DK_V0 + v * DV_WORDS;
+    for (v = 0, at = 0; v < DRUMCHAPEL_DEFS; v++) {
+        uint32_t *q = KW[KIT_ACOUSTIC] + DK_V0 + v * DV_WORDS, i;
+        if (!SAMPLE_N[v]) continue;
+        for (i = 0; i < SAMPLE_N[v]; i++)
+            SAMP[(at + i) / 4] |= (uint32_t)SAMPLE_DATA[v][i] << (8 * ((at + i) % 4));
         q[DV_PD] = 0;                                  /* a sample */
-        q[DV_INC] = v == DEF_KICK ? 0u : SAMP_SNARE0;
-        q[DV_SWEEP] = v == DEF_KICK ? DC_SAMPLE_KICK_N : DC_SAMPLE_SNARE_N;
+        q[DV_INC] = at;
+        q[DV_SWEEP] = SAMPLE_N[v];
+        q[DV_TLEV] = fbits(SAMPLE_GAIN[v]);
+        at += SAMPLE_N[v];
     }
-#endif
     built = 1;
 }
 
@@ -345,11 +368,17 @@ uint32_t drumchapel_groove_step(int groove, int pattern, uint32_t k)
     return step_byte(d, k % (d & 511u));
 }
 const uint32_t *drumchapel_metal(void) { build(); return MI; }
-const uint32_t *drumchapel_samples(uint32_t *nwords) { build(); if (nwords) *nwords = SAMPLED ? SAMP_WORDS : 0; return SAMP; }
-int drumchapel_sampled(void) { return SAMPLED; }
-uint32_t drumchapel_sample_first(int voice) { build(); return SAMPLED ? KW[KIT_ACOUSTIC][DK_V0 + clampi(voice, 2) * DV_WORDS + DV_INC] : 0; }
-uint32_t drumchapel_sample_len(int voice) { build(); return SAMPLED ? KW[KIT_ACOUSTIC][DK_V0 + clampi(voice, 2) * DV_WORDS + DV_SWEEP] : 0; }
+const uint32_t *drumchapel_samples(uint32_t *nwords) { build(); if (nwords) *nwords = SAMP_BYTES ? SAMP_WORDS : 0; return SAMP; }
+int drumchapel_sampled(void)
+{
+    int v, n = 0;
+    for (v = 0; v < DRUMCHAPEL_DEFS; v++) n += SAMPLE_N[v] != 0;
+    return n;
+}
+uint32_t drumchapel_sample_first(int def) { build(); def = clampi(def, DRUMCHAPEL_DEFS); return SAMPLE_N[def] ? KW[KIT_ACOUSTIC][DK_V0 + def * DV_WORDS + DV_INC] : 0; }
+uint32_t drumchapel_sample_len(int def) { return SAMPLE_N[clampi(def, DRUMCHAPEL_DEFS)]; }
 const uint32_t *drumchapel_tune(void) { build(); return TUNE; }
+const uint32_t *drumchapel_tune_step(void) { build(); return TSTEP; }
 const char *drumchapel_pattern_name(int p) { return PATTERN[clampi(p, DRUMCHAPEL_PATTERNS)].name; }
 const char *drumchapel_kit_name(int kit) { return KIT[clampi(kit, DRUMCHAPEL_KITS)].name; }
 
@@ -372,11 +401,20 @@ static void reset(void *st, float sr)
     s->len = DRUMCHAPEL_STEPS;
 }
 
-float drumchapel_sample(uint32_t i)                /* table sample i: q / 32768, exactly */
+float drumchapel_sample(uint32_t i)                /* table sample i (a mu-law byte), exactly */
 {
-    uint32_t w = SAMP[i >> 1];
-    int q = (i & 1u) ? (int)(int16_t)(uint16_t)(w >> 16) : (int)(int16_t)(uint16_t)(w & 0xFFFFu);
-    return (float)q * (1.0f / 32768.0f);
+    return drumchapel_ulaw((uint8_t)(SAMP[i >> 2] >> (8 * (i & 3u))));
+}
+
+/* a sampled hit at 16.16 position pos: samples i and i + 1 (0 past its end) interpolated; the caller has i < len */
+float drumchapel_sample_at(uint32_t first, uint32_t len, uint32_t pos)
+{
+    uint32_t i = pos >> 16;
+    float a = drumchapel_sample(first + i), b = i + 1u < len ? drumchapel_sample(first + i + 1u) : 0.0f, f;
+    f = (float)(pos & 0xFFFFu) * (1.0f / 65536.0f);
+    b = b - a;
+    b = b * f;
+    return a + b;
 }
 
 static float sine_p(float ph)                     /* a parabola through sin(2 pi (ph - 1/2)), peak 1 */
@@ -408,11 +446,14 @@ static void hit(DrumChapelState *s, uint32_t b, const uint32_t *kw, const float 
             float old = V->te;
             V->ne = old;
             V->pos2 = V->age;
+            V->inc2 = V->inc;
+            V->def2 = V->def;
             V->pe = old * drumchapel_xf;
-            V->te = lev[v];
+            V->te = wf(p, DV_TLEV) * lev[v];
             V->age = 0;
+            V->inc = v == TOM ? TSTEP[b >> DC_B_PITCH & 3u] : 0x8000u;
             V->def = def;
-            V->tune = 1.0f;
+            V->tune = v == TOM ? TUNE_F[b >> DC_B_PITCH & 3u] : 1.0f;   /* (a synthesised kit's, if Kit changes mid-hit) */
             s->hits[v]++;
             continue;
         }
@@ -434,18 +475,18 @@ static float voice(DrumVoice *V, int v, const uint32_t *kw, float n, float y)
     if (V->te < drumchapel_silent && V->ne < drumchapel_silent)
         return y;
     if (p[DV_PD] == 0u) {                           /* a sample (INC its first index, SWEEP its length) */
-        uint32_t first = p[DV_INC], len = p[DV_SWEEP];
-        if (V->age < len) {
-            t = drumchapel_sample(first + V->age) * V->te;
+        const uint32_t *q = kw + DK_V0 + V->def2 * DV_WORDS;
+        if ((V->age >> 16) < p[DV_SWEEP]) {
+            t = drumchapel_sample_at(p[DV_INC], p[DV_SWEEP], V->age) * V->te;
             y = y + t;
-            V->age++;
+            V->age += V->inc;
         } else {
             V->te = 0.0f;                           /* its end: the voice stops */
         }
-        if (V->ne > 0.0f && V->pos2 < len) {         /* a retriggered hit, fading out */
-            t = drumchapel_sample(first + V->pos2) * V->ne;
+        if (V->ne > 0.0f && q[DV_PD] == 0u && (V->pos2 >> 16) < q[DV_SWEEP]) {   /* the previous hit, fading out */
+            t = drumchapel_sample_at(q[DV_INC], q[DV_SWEEP], V->pos2) * V->ne;
             y = y + t;
-            V->pos2++;
+            V->pos2 += V->inc2;
             V->ne = V->ne - V->pe;
         } else {
             V->ne = 0.0f;
@@ -566,14 +607,4 @@ float drumchapel_ulaw(uint8_t u)
     unsigned v = (unsigned)(~u) & 0xFFu;
     int t = (int)((((v & 0x0Fu) << 3) + 0x84u) << ((v & 0x70u) >> 4));
     return (float)((v & 0x80u) ? 0x84 - t : t - 0x84) * (1.0f / 32768.0f);
-}
-
-float drumchapel_interp(const float *s, uint32_t n, uint32_t pos)
-{
-    uint32_t i = pos >> 16;
-    if (i >= n)
-        return 0.0f;
-    float a = s[i], b = i + 1 < n ? s[i + 1] : 0.0f;
-    float f = (float)(pos & 0xFFFFu) * (1.0f / 65536.0f);
-    return a + (b - a) * f;
 }

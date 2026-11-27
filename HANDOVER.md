@@ -533,8 +533,19 @@ swap per call, and Acoustic's output, which can reach about 2 x Level where kick
 - **Test image** (`build.py full --quick`, kept as `build/HX_Effects_v3.80.0_NAM_Amps_Effects_UserGrooves.hxf`):
   MD5 4722479f79bbc85860c3b5cd94edba83, verified ALL OK; flashed 2026-11-27, booted, no fault. Tested on the unit
   2026-11-27: the editor's Send to unit writes slot 128 and Drum Chapel's User groove plays the patterns as sent.
-- Still to do: the Acoustic kit repack (five voices), user kits, an image with all of it (ask before flashing), the
-  preset builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
+- **The Acoustic kit, five sampled voices (2026-11-27).** The hits are Naked Drums by Wilkinson Audio (CC BY 4.0,
+  the user's pick over Big Rusty Drums; committed with credit by the user's decision, an exception to "no third-party
+  samples": README copyright notice and Thanks, samples_data.h's header). Snare 2, tom 3, the hardest hits, close mics
+  mixed with overheads; lengths kick 350 / snare 400 / hat 120 / tom 500 / open hat 800 ms (user); 8-bit mu-law at
+  24 kHz, 13,020 words in Blob 0; gains 1.2 (hats 0.6). Reference: 16.16 position and step per voice, interpolated,
+  the tom at four steps, a 64-sample crossfade on every hit (the closed hat chokes the open hat); 239 checks pass.
+  Kernel: bit for bit on 438,400 samples; the seven kits moved from the overlay data to DDR2 (T_DKIT, after the
+  samples; a call copies its kit into T_KIT), a decode cache per hit. Figures: 737 instructions / 254 data words /
+  worst 9,830 cycles (was 515 / 452 / 6,821): the check's own 9,000 limit fails until the user decides Drum Chapel's
+  cost (by build_all's rule about 300 + words copied). The first build before the kit move did not fit (the overlay
+  region's data 128 words over, before Click); the image with the move: see below.
+- Still to do: the image with the new kit (ask before flashing), Drum Chapel's cost, user kits, the preset
+  builder's catalogue (regenerate fw-catalog.js from the new full build for Groove's User entry).
 
 ## Don'ts
 

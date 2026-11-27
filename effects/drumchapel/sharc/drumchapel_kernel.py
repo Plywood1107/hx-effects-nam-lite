@@ -17,10 +17,10 @@ T_DIR: on the unit inside Blob 0 in DDR2 (build_all.py places it and calls place
 BANK_CHECK, loaded into the simulator from the C library (spec.ext). It holds the converted grooves when
 effects/drumchapel/grooves_data.h exists (grooves.py), else the Classic patterns only.
 
-The Acoustic kit's samples (drumchapel_samples: 16-bit, two to a word) are a second read-only table, right after
-the bank (T_SAMP), loaded into the simulator beside it and placed in Blob 0 beside it by the image build. They exist
-when effects/drumchapel/samples_data.h does (samples.py); without it the table is empty and Acoustic's kick and
-snare are synthesised (Punch's), so nothing reads it.
+The Acoustic kit's samples (drumchapel_samples: 8-bit mu-law at 24 kHz, four to a word) are a second read-only
+table, right after the bank (T_SAMP), loaded into the simulator beside it and placed in Blob 0 beside it by the image
+build. They exist when effects/drumchapel/samples_data.h does (samples.py); a voice without a hit there keeps its
+synthesised definition, so nothing reads the table for it.
 """
 import ctypes
 import os
@@ -42,7 +42,8 @@ ACOUSTIC = 6
 DIR_WORDS = NGROOVE * NPAT
 NSLOTS = 2
 BANK_CHECK = 0x3A0000                   # the bank's address in the check; the image build sets the unit's (DDR2)
-VFIELDS = ['PH', 'PH2', 'PE', 'TE', 'NE', 'AGE', 'LP', 'DEF', 'TUNE', 'POS2']   # = DrumVoice
+VFIELDS = ['PH', 'PH2', 'PE', 'TE', 'NE', 'AGE', 'LP', 'DEF', 'TUNE', 'POS2', 'INC', 'INC2', 'DEF2',   # = DrumVoice,
+           'CI', 'CA', 'CB', 'CI2', 'CA2', 'CB2']   # then the kernel's own: each hit's decoded samples (g_at)
 KFIELDS = ['DRIVE', 'COMP', 'TDRIVE', 'M2', 'HOLD', 'GATE']                  # = drumchapel.h DK_*, then the definitions
 DFIELDS = ['INC', 'SWEEP', 'PD', 'TD', 'ND', 'TLEV', 'NLEV', 'NF']           # = DV_*
 DK_WORDS = len(KFIELDS) + NDEF * len(DFIELDS)
@@ -62,13 +63,30 @@ def bank():
     return [p[k] for k in range(n.value)]
 
 
-def samples():
+def sample_words():
     """The sample table's words (none without samples_data.h), from the C library."""
     lib = kr.lib()
     lib.drumchapel_samples.restype = ctypes.POINTER(ctypes.c_uint32)
     n = ctypes.c_uint32()
     p = lib.drumchapel_samples(ctypes.byref(n))
     return [p[k] for k in range(n.value)]
+
+
+def kit_words():
+    """Every kit's words (DK_WORDS each, kit 0 first), from the C library: the kernel's T_DKIT, in DDR2."""
+    lib = kr.lib()
+    lib.drumchapel_kit_words.restype = ctypes.POINTER(ctypes.c_uint32)
+    out = []
+    for k in range(NKIT):
+        w = lib.drumchapel_kit_words(k)
+        out += [w[i] for i in range(DK_WORDS)]
+    return out
+
+
+def samples():
+    """The read-only words after the bank: the sample table (T_SAMP), then the kits (T_DKIT). A call copies its kit's
+    DK_WORDS words into T_KIT, in its data: the seven kits stay out of the overlay data swapped in on every call."""
+    return sample_words() + kit_words()
 
 
 def sampled():
@@ -85,12 +103,11 @@ def tables():
     lib.drumchapel_kit_words.restype = ctypes.POINTER(ctypes.c_uint32)
     lib.drumchapel_metal.restype = ctypes.POINTER(ctypes.c_uint32)
     lib.drumchapel_tune.restype = ctypes.POINTER(ctypes.c_uint32)
-    kits = []
-    for k in range(NKIT):
-        w = lib.drumchapel_kit_words(k)
-        kits += [w[i] for i in range(DK_WORDS)]
-    metal, tune = lib.drumchapel_metal(), lib.drumchapel_tune()
-    return (('T_KIT', kits), ('T_METAL', [metal[k] for k in range(NMETAL)]), ('T_TUNE', [tune[k] for k in range(4)]))
+    lib.drumchapel_tune_step.restype = ctypes.POINTER(ctypes.c_uint32)
+    metal, tune, tstep = lib.drumchapel_metal(), lib.drumchapel_tune(), lib.drumchapel_tune_step()
+    return (('T_KIT', [0] * DK_WORDS),                      # this call's kit, copied from T_DKIT
+            ('T_METAL', [metal[k] for k in range(NMETAL)]), ('T_TUNE', [tune[k] for k in range(4)]),
+            ('T_TSTEP', [tstep[k] for k in range(4)]))
 
 
 def consts():
@@ -105,8 +122,10 @@ def place_bank(spec, addr):
     T_SAMP, and the words the check loads there. Returns the sample table's address."""
     b = bank()
     samp = addr + len(b)
-    spec.extra_equ = [e for e in spec.extra_equ if not e.startswith(('.equ T_DIR,', '.equ T_STEPS,', '.equ T_SAMP,'))]
-    spec.extra_equ += [f'.equ T_DIR, {addr:#x}', f'.equ T_STEPS, {addr + DIR_WORDS:#x}', f'.equ T_SAMP, {samp:#x}']
+    sw = sample_words()
+    spec.extra_equ = [e for e in spec.extra_equ if not e.startswith(('.equ T_DIR,', '.equ T_STEPS,', '.equ T_SAMP,', '.equ T_DKIT,'))]
+    spec.extra_equ += [f'.equ T_DIR, {addr:#x}', f'.equ T_STEPS, {addr + DIR_WORDS:#x}', f'.equ T_SAMP, {samp:#x}',
+                       f'.equ T_DKIT, {samp + len(sw):#x}']
     spec.bank_addr, spec.samp_addr = addr, samp
     spec.ext = [(addr, b), (samp, samples())] + user_ext(getattr(spec, 'user_words', None))
     return samp
@@ -148,7 +167,7 @@ def make_spec(bank_addr=BANK_CHECK):
            f'.equ DO_HAT, {len(KFIELDS) + 2 * len(DFIELDS)}', f'.equ DO_OPEN, {len(KFIELDS) + 4 * len(DFIELDS)}',
            f'.equ KITMAX, {NKIT - 1}', f'.equ USER_GROOVE, {USER_GROOVE}', f'.equ USER_SLOT, {USER_SLOT}',
            f'.equ IR_FLAG, {IR_FLAG:#x}', f'.equ USER_TOP, {USER_TOP:#x}', f'.equ DCU_DIR, {DCU_DIR}',
-           f'.equ DCU_STEPS, {DCU_STEPS}', f'.equ DCU_MAX_STEPS, {DCU_MAX_STEPS}']
+           f'.equ DCU_STEPS, {DCU_STEPS}', f'.equ DCU_MAX_STEPS, {DCU_MAX_STEPS}', '.equ NOCACHE, 0x7FFFFFFF']
     equ += [f'.equ VS_{n}, {k}' for k, n in enumerate(VFIELDS)]
     equ += [f'.equ DK_{n}, {k}' for k, n in enumerate(KFIELDS)]
     equ += [f'.equ DV_{n}, {k}' for k, n in enumerate(DFIELDS)]
@@ -158,6 +177,7 @@ def make_spec(bank_addr=BANK_CHECK):
                    int_knobs={'pattern', 'kit', 'groove'},
                    order=['time', 'pattern', 'kit', 'kick', 'snare', 'hat', 'swing', 'level', 'groove'],   # = drumchapel.h DC_*
                    state=STATE, constants=CONSTANTS, nslots=NSLOTS, tables=tables(), max_cycles=9000, extra_equ=equ)
+    spec.extra_writes = [('T_KIT', DK_WORDS)]
     assert spec.state['ST_V0'] == 2 + 6
     spec.places['b2'] = (0xC4EF8, 0xC5554, 0xE4850)       # a Drum-Chapel-only placement, for the check
     place_bank(spec, bank_addr)
@@ -190,13 +210,18 @@ def _groove_cases():
         gp = _find(lambda b, t=t: b & B_TOM and (b >> B_PITCH & 3) == t)
         if gp:
             out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=t + 1, kick=1, snare=0.8, hat=0.7, swing=0.2 * t, level=1))
+    for t in range(4):                                                              # Acoustic's toms at each pitch
+        gp = _find(lambda b, t=t: b & B_TOM and (b >> B_PITCH & 3) == t)
+        if gp:
+            out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=ACOUSTIC, kick=1, snare=0.9, hat=0.8, swing=0.1 * t, level=1))
     gp = _find(lambda b: b & B_TOM)
-    if gp:                                                                          # Acoustic's synthesised toms
+    if gp:
         out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=ACOUSTIC, kick=1, snare=1, hat=0.8, swing=0, level=1))
     gp = _find(lambda b: b & B_OPEN)
     if gp:
         out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=0, kick=0.7, snare=0.7, hat=1, swing=0, level=1))
         out.append(dict(time=0.12, groove=gp[0], pattern=gp[1], kit=5, kick=1, snare=1, hat=1, swing=0.5, level=0.9))
+        out.append(dict(time=0.1, groove=gp[0], pattern=gp[1], kit=ACOUSTIC, kick=1, snare=1, hat=1, swing=0.3, level=1))   # the choke
     return out
 
 

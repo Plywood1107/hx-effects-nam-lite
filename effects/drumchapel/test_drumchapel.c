@@ -215,37 +215,62 @@ static float chain(const uint32_t *kw, float y, float level)
     return 0.0f + w;
 }
 
-/* One sampled voice's hits on the steps of `steps` (bytes, 16 steps, Time t, nothing else sounding): the output must be
-   the stored sample x the knob, sample for sample, through the kit's chain; a retrigger crossfades the sounding hit out
-   over DRUMCHAPEL_XF samples from where it was; the voice stops at the sample's end. Returns the samples that differ. */
-static int exact_hits(int voice, const uint32_t *steps, float t, float lev, float level, float *x, float *y, size_t n)
+/* An independent model of Acoustic's sampled voices (drumchapel.h, "Samples"): `steps` (bytes, 16 steps, repeated) at
+   Time t, no swing, the knobs lev[] (kick, snare, hat; the tom the kick's), Level `level`, the guitar silent. Each
+   voice keeps its hit (definition, 16.16 position and step, level) and the one fading out; the output must be their
+   sum through the kit's chain, sample for sample. Returns the samples that differ. Needs every voice it hits sampled. */
+typedef struct { uint32_t def, pos, inc, def2, pos2, inc2; float te, ne, pe; } ModelVoice;
+
+static float model_at(uint32_t def, uint32_t pos)
 {
-    const uint32_t *kw = drumchapel_kit_words(KIT_ACOUSTIC);
-    uint32_t first = drumchapel_sample_first(voice), len = drumchapel_sample_len(voice), age = len, pos2 = len;
+    uint32_t first = drumchapel_sample_first((int)def), len = drumchapel_sample_len((int)def), i = pos >> 16;
+    float a = drumchapel_sample(first + i), b = i + 1 < len ? drumchapel_sample(first + i + 1) : 0.0f;
+    float f = (float)(pos & 0xFFFFu) / 65536.0f;
+    return a + (b - a) * f;
+}
+
+static int exact_hits(const uint32_t *steps, float t, const float lev[3], float level, float *x, float *y, size_t n)
+{
+    const uint32_t *kw = drumchapel_kit_words(KIT_ACOUSTIC), *ts = drumchapel_tune_step();
     uint32_t inc = click_bpm100(t) * 4u, acc = 0, step = 0;
-    float te = 0.0f, ne = 0.0f, pe = 0.0f;
+    ModelVoice m[DRUMCHAPEL_VOICES];
     DrumChapelState s;
     FxParams p;
     size_t i;
-    int bad = 0, pend = 1;
+    int bad = 0, pend = 1, v;
+    memset(m, 0, sizeof m);
     poke(11, 19, 16, steps, 16);
-    setg(&p, t, 11, 19, KIT_ACOUSTIC, voice == KICK ? lev : 0, voice == SNARE ? lev : 0, 0);
+    setg(&p, t, 11, 19, KIT_ACOUSTIC, lev[0], lev[1], lev[2]);
     p.value[DC_LEVEL] = level;
     memset(x, 0, n * sizeof *x);
     render(&s, &p, x, y, n, 16);
     for (i = 0; i < n; i++) {
-        float v = 0.0f, u;
+        float sum = 0.0f;
         if (pend) {                                    /* the step (no swing), as the reference counts them */
+            uint32_t b = steps[step];
             pend = 0;
-            if (steps[step] >> voice & 1u) { ne = te; pos2 = age; pe = te * drumchapel_xf; te = lev; age = 0; }
+            for (v = 0; v < DRUMCHAPEL_VOICES; v++) {
+                ModelVoice *M = &m[v];
+                uint32_t def = (uint32_t)v;
+                if (!(b >> v & 1u)) continue;
+                if (v == HAT && (b & DC_B_OPEN)) def = DEF_OPEN;
+                M->def2 = M->def; M->pos2 = M->pos; M->inc2 = M->inc; M->ne = M->te; M->pe = M->te * drumchapel_xf;
+                M->def = def; M->pos = 0; M->inc = v == TOM ? ts[b >> DC_B_PITCH & 3u] : 0x8000u;
+                M->te = kwf(kw, DK_V0 + (int)def * DV_WORDS + DV_TLEV) * lev[v == TOM ? 0 : v];
+            }
         }
         acc += inc;
         if (acc >= DRUMCHAPEL_PERIOD) { acc -= DRUMCHAPEL_PERIOD; step = (step + 1) % 16; pend = 1; }
-        if (te >= drumchapel_silent || ne >= drumchapel_silent) {
-            if (age < len) { u = drumchapel_sample(first + age) * te; v = v + u; age++; } else te = 0.0f;
-            if (ne > 0.0f && pos2 < len) { u = drumchapel_sample(first + pos2) * ne; v = v + u; pos2++; ne = ne - pe; } else ne = 0.0f;
+        for (v = 0; v < DRUMCHAPEL_VOICES; v++) {
+            ModelVoice *M = &m[v];
+            if (M->te < drumchapel_silent && M->ne < drumchapel_silent) continue;
+            if ((M->pos >> 16) < drumchapel_sample_len((int)M->def)) { sum = sum + model_at(M->def, M->pos) * M->te; M->pos += M->inc; }
+            else M->te = 0.0f;
+            if (M->ne > 0.0f && (M->pos2 >> 16) < drumchapel_sample_len((int)M->def2)) {
+                sum = sum + model_at(M->def2, M->pos2) * M->ne; M->pos2 += M->inc2; M->ne = M->ne - M->pe;
+            } else M->ne = 0.0f;
         }
-        if (y[i] != chain(kw, v, level)) bad++;
+        if (y[i] != chain(kw, sum, level)) bad++;
     }
     unpoke();
     return bad;
@@ -253,74 +278,134 @@ static int exact_hits(int voice, const uint32_t *steps, float t, float lev, floa
 
 static void acoustic(float *x, float *y)
 {
-    const uint32_t *ac = drumchapel_kit_words(KIT_ACOUSTIC), *pu = drumchapel_kit_words(KIT_PUNCH);
-    static const uint32_t one[16] = { 1 }, two[16] = { 1, 1 }, many[16] = { 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1 };
+    static const char *dn[DRUMCHAPEL_DEFS] = { "kick", "snare", "hat", "tom", "open hat" };
+    static const uint32_t hitb[DRUMCHAPEL_DEFS] = { DC_B_KICK, DC_B_SNARE, DC_B_HAT, DC_B_TOM, DC_B_HAT | DC_B_OPEN };
+    const uint32_t *ac = drumchapel_kit_words(KIT_ACOUSTIC), *pu = drumchapel_kit_words(KIT_PUNCH), *ts = drumchapel_tune_step();
+    const float full[3] = { 1, 1, 1 }, some[3] = { 0.3f, 0.45f, 0.7f };
     DrumChapelState s;
     FxParams p;
     size_t i, n = 4 * 48000;
-    int v, g, pat, bad;
+    int v, g, pat, bad, all = 1;
+    uint32_t nw, at = 0;
     double pk1 = 0, pkd = 0;
     CHECK(strcmp(drumchapel_kit_name(KIT_ACOUSTIC), "Acoustic") == 0, "kit 6 is %s", drumchapel_kit_name(KIT_ACOUSTIC));
-    if (!drumchapel_sampled()) {
-        /* the fallback: Punch's kick and snare definitions, word for word; hat, tom and open hat its own */
-        CHECK(memcmp(ac + DK_V0, pu + DK_V0, 2 * DV_WORDS * 4) == 0, "without samples, Acoustic's kick and snare are not Punch's");
-        printf("  Acoustic: no samples_data.h, its kick and snare are Punch's (synthesised)\n");
-    } else {
-        uint32_t nw;
-        drumchapel_samples(&nw);
-        for (v = KICK; v <= SNARE; v++) {
-            const uint32_t *q = ac + DK_V0 + v * DV_WORDS;
-            uint32_t k, len = drumchapel_sample_len(v), first = drumchapel_sample_first(v);
-            double pk = 0;
-            CHECK(q[DV_PD] == 0 && first == q[DV_INC] && len == q[DV_SWEEP] && len > 4800 && first % 2 == 0 && (first + len + 1) / 2 <= nw,
-                  "Acoustic voice %d: PD %#x, first %u, %u samples, table %u words", v, q[DV_PD], first, len, nw);
-            for (k = 0; k < len; k++) if (fabs(drumchapel_sample(first + k)) > pk) pk = fabs(drumchapel_sample(first + k));
-            CHECK(pk > 0.99 && drumchapel_sample(first + len - 1) == 0.0f, "voice %d sample: peak %g, last %g", v, pk,
-                  drumchapel_sample(first + len - 1));
+    CHECK(ts[0] == 0x8000u && ts[1] == 26214u && ts[2] == 20972u && ts[3] == 16384u, "the tom's steps %u %u %u %u", ts[0], ts[1], ts[2], ts[3]);
+    drumchapel_samples(&nw);
+    /* each definition: a sample (PD 0, its bytes after the last one's, peak at full scale, ending at 0), or, without
+       a hit, its synthesised definition (the kick and snare Punch's) */
+    for (v = 0; v < DRUMCHAPEL_DEFS; v++) {
+        const uint32_t *q = ac + DK_V0 + v * DV_WORDS;
+        uint32_t k, len = drumchapel_sample_len(v), first = drumchapel_sample_first(v);
+        double pk = 0;
+        if (!len) {
+            all = 0;
+            CHECK(q[DV_PD] != 0 && (v > DEF_SNARE || memcmp(q, pu + DK_V0 + v * DV_WORDS, DV_WORDS * 4) == 0),
+                  "Acoustic %s without a hit is not its synthesised definition", dn[v]);
+            printf("  Acoustic %s: no hit in samples_data.h, synthesised\n", dn[v]);
+            continue;
         }
-        printf("  Acoustic samples: kick %u, snare %u samples (%.0f / %.0f ms), %u words\n", drumchapel_sample_len(KICK),
-               drumchapel_sample_len(SNARE), drumchapel_sample_len(KICK) / 48.0, drumchapel_sample_len(SNARE) / 48.0, nw);
-        /* the stored sample x the knob, sample for sample, through the chain; it stops at its end (one hit a bar) */
-        for (v = KICK; v <= SNARE; v++) {
-            uint32_t b[16] = { 0 };
-            b[0] = v == KICK ? DC_B_KICK : DC_B_SNARE;
-            bad = exact_hits(v, b, 1.0f, 0.8f, 1.0f, x, y, n);
-            CHECK(bad == 0, "voice %d: %d samples are not the stored sample x its level", v, bad);
-            /* the voice ends: silent after the sample, until the next bar */
-            for (i = drumchapel_sample_len(v), bad = 0; i < 4 * 12000; i++) bad += y[i] != 0.0f;
-            CHECK(bad == 0 && y[0] != 0.0f, "voice %d: %d samples sound after its end", v, bad);
-            /* and the chain is clean: out / knob within 2.1 % of the sample (Acoustic's soft limit at the peak) */
-            {
-                double worst = 0;
-                for (i = 0; i < drumchapel_sample_len(v); i++) {
-                    double want = drumchapel_sample(drumchapel_sample_first(v) + (uint32_t)i), e = fabs(y[i] / 0.8 - want);
-                    if (e > worst) worst = e;
-                }
-                CHECK(worst < 0.021, "voice %d: the chain changes the sample by up to %g", v, worst);
-            }
-            bad = exact_hits(v, b, 0.5f, 0.3f, 0.45f, x, y, n);
-            CHECK(bad == 0, "voice %d at another level: %d samples differ", v, bad);
-            /* retriggers: a hit on the next step (1,200 samples at Time 0.1), runs of them, a fast groove */
-            bad = exact_hits(v, v == KICK ? one : one, 0.1f, 1.0f, 1.0f, x, y, n);
-            bad += exact_hits(v, two, 0.1f, 1.0f, 1.0f, x, y, n);
-            bad += exact_hits(v, many, 0.1f, 0.9f, 0.8f, x, y, n);
-            bad += exact_hits(v, many, 0.37f, 1.0f, 1.0f, x, y, n);
-            CHECK(bad == 0, "voice %d retriggered: %d samples differ", v, bad);
+        CHECK(q[DV_PD] == 0 && first == q[DV_INC] && len == q[DV_SWEEP] && first == at && (first + len + 3) / 4 <= nw && len > 2400,
+              "Acoustic %s: PD %#x, first %u, %u samples, table %u words", dn[v], q[DV_PD], first, len, nw);
+        for (k = 0; k < len; k++) if (fabs(drumchapel_sample(first + k)) > pk) pk = fabs(drumchapel_sample(first + k));
+        CHECK(pk > 0.97 && drumchapel_sample(first + len - 1) == 0.0f, "%s sample: peak %g, last %g", dn[v], pk,
+              drumchapel_sample(first + len - 1));
+        printf("  Acoustic %s: %u samples at 24 kHz (%.0f ms), gain %g\n", dn[v], len, len / 24.0, kwf(q, DV_TLEV));
+        at += len;
+    }
+    CHECK(nw == (at + 3) / 4, "the table: %u words for %u samples", nw, at);
+    /* the mu-law decoder: G.711's 256 values, odd about 0, 0 at codes 0xFF and 0x7F */
+    for (v = 0, bad = 0; v < 256; v++) {
+        float a = drumchapel_ulaw((uint8_t)v), b = drumchapel_ulaw((uint8_t)(v ^ 0x80));
+        bad += a != -b || fabsf(a) > 32124.0f / 32768.0f || (v < 127 && !(fabsf(a) > fabsf(drumchapel_ulaw((uint8_t)(v + 1)))));
+    }
+    CHECK(bad == 0 && drumchapel_ulaw(0xFF) == 0.0f && drumchapel_ulaw(0) == -32124.0f / 32768.0f, "mu-law decoder: %d bad codes", bad);
+    if (all) {
+        /* each voice alone: the sample interpolated (24 -> 48 kHz) x its gain x the knob, through the chain, then
+           silence after its end; at another level; retriggered (the next step at Time 0.1, runs, a fast groove) */
+        for (v = 0; v < DRUMCHAPEL_DEFS; v++) {
+            uint32_t b[16] = { 0 }, two[16] = { 0 }, many[16] = { 0 }, k;
+            size_t end = 2 * (size_t)drumchapel_sample_len(v);
+            static const uint8_t mk[16] = { 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1 };
+            b[0] = two[0] = two[1] = hitb[v];
+            for (k = 0; k < 16; k++) many[k] = mk[k] ? hitb[v] : 0;
+            bad = exact_hits(b, 1.0f, full, 1.0f, x, y, n);
+            CHECK(bad == 0, "%s: %d samples are not the sample x its level", dn[v], bad);
+            for (i = end, bad = 0; i < 4 * 12000 * 4 && i < n; i++) bad += y[i] != 0.0f;
+            CHECK(bad == 0 && peak(y, 480) > 0.01, "%s: %d samples sound after its end (%zu)", dn[v], bad, end);
+            bad = exact_hits(b, 0.5f, some, 0.45f, x, y, n);
+            bad += exact_hits(b, 0.1f, full, 1.0f, x, y, n);
+            bad += exact_hits(two, 0.1f, full, 1.0f, x, y, n);
+            bad += exact_hits(many, 0.1f, some, 0.8f, x, y, n);
+            bad += exact_hits(many, 0.37f, full, 1.0f, x, y, n);
+            CHECK(bad == 0, "%s at other levels and retriggered: %d samples differ", dn[v], bad);
         }
-        /* a retrigger is click-free: the largest step in the output across a retrigger is no larger than inside a hit */
+        /* the tom at its four pitches: each its step, lasting len / pitch; toms of every pitch one after another */
+        for (v = 0; v < 4; v++) {
+            uint32_t b[16] = { DC_B_TOM | (uint32_t)v << DC_B_PITCH };
+            size_t want = ((size_t)drumchapel_sample_len(DEF_TOM) * 65536 + ts[v] - 1) / ts[v], last = 0;
+            bad = exact_hits(b, 2.0f, full, 1.0f, x, y, n);
+            for (i = 0; i < n; i++) if (y[i] != 0.0f) last = i;
+            CHECK(bad == 0 && last + 1 >= want * 97 / 100 && last < want, "tom pitch %d: %d samples differ, it sounds %zu samples (%zu)", v, bad, last + 1, want);
+        }
         {
-            uint32_t b[16] = { 1, 1 }, at = 1200;
-            double jump = 0, inside = 0, naive;
-            exact_hits(KICK, b, 0.1f, 1.0f, 1.0f, x, y, 2400 * 2);
-            for (i = at; i < at + 200; i++) if (fabs(y[i] - y[i - 1]) > jump) jump = fabs(y[i] - y[i - 1]);
+            uint32_t b[16];
+            for (v = 0; v < 16; v++) b[v] = DC_B_TOM | (uint32_t)(v % 4) << DC_B_PITCH | (v % 3 == 0 ? DC_B_KICK : 0u);
+            CHECK(exact_hits(b, 0.13f, full, 1.0f, x, y, n) == 0, "toms of every pitch in a run differ");
+        }
+        /* the choke: the closed hat on the next step cuts the ringing open hat in 64 samples; after them only the
+           closed hat sounds (the output as for the closed hat alone) */
+        {
+            uint32_t oc[16] = { DC_B_HAT | DC_B_OPEN, DC_B_HAT }, c[16] = { 0, DC_B_HAT };
+            static float y2[48000];
+            size_t at1 = 6000;                                   /* a sixteenth at Time 0.5 */
+            double before = 0;
+            bad = exact_hits(oc, 0.5f, full, 1.0f, x, y, n);
+            CHECK(bad == 0, "open then closed hat: %d samples differ", bad);
+            memcpy(y2, y, sizeof y2);
+            exact_hits(c, 0.5f, full, 1.0f, x, y, n);
+            for (i = at1 + 64, bad = 0; i < 48000; i++) bad += y2[i] != y[i];
+            for (i = at1 - 600; i < at1; i++) before += fabs(y2[i]);
+            CHECK(bad == 0 && before > 1.0, "the closed hat chokes the open one: %d samples differ after 64 (open before: %g)", bad, before);
+            for (i = at1, bad = 0; i < at1 + 64; i++) bad += y2[i] == y[i];
+            CHECK(bad < 4, "the choke is a crossfade, not a cut (%d samples equal inside it)", bad);
+            CHECK(exact_hits((const uint32_t[16]){ DC_B_HAT, DC_B_HAT | DC_B_OPEN, DC_B_HAT | DC_B_OPEN, DC_B_HAT }, 0.1f, full, 1.0f, x, y, n) == 0,
+                  "open and closed hats in turn differ");
+        }
+        /* everything at once, the fast grooves */
+        {
+            uint32_t b[16];
+            for (v = 0; v < 16; v++) b[v] = (uint32_t)((v * 37 + 11) % 128);
+            bad = exact_hits(b, 0.1f, full, 1.0f, x, y, n);
+            bad += exact_hits(b, 0.21f, some, 0.6f, x, y, n);
+            CHECK(bad == 0, "every voice at once: %d samples differ", bad);
+        }
+        /* the chain is clean: the kick alone, out / (knob x gain) within 3 % of the interpolated sample (the shaper at
+           its peak) */
+        {
+            uint32_t b[16] = { DC_B_KICK };
+            const float k8[3] = { 0.8f, 0, 0 };
+            double worst = 0;
+            exact_hits(b, 1.0f, k8, 1.0f, x, y, n);
+            for (i = 0; i < 2 * (size_t)drumchapel_sample_len(DEF_KICK); i++) {
+                double e = fabs(y[i] / (0.8 * kwf(ac, DK_V0 + DV_TLEV)) - model_at(DEF_KICK, (uint32_t)i * 0x8000u));
+                if (e > worst) worst = e;
+            }
+            CHECK(worst < 0.03, "the chain changes the kick by up to %g", worst);
+        }
+        /* a retrigger is click-free: the largest step across it is no larger than inside a hit */
+        {
+            uint32_t b[16] = { 1, 1 };
+            size_t at1 = 1200;
+            double jump = 0, inside = 0;
+            exact_hits(b, 0.1f, full, 1.0f, x, y, 2400 * 2);
+            for (i = at1; i < at1 + 200; i++) if (fabs(y[i] - y[i - 1]) > jump) jump = fabs(y[i] - y[i - 1]);
             for (i = 1; i < 1200; i++) if (fabs(y[i] - y[i - 1]) > inside) inside = fabs(y[i] - y[i - 1]);
-            naive = fabs(drumchapel_sample(0) - drumchapel_sample(at - 1));
-            printf("  kick retrigger: largest step %.3f across it (a plain restart: %.3f), %.3f inside a hit\n", jump, naive, inside);
-            CHECK(jump <= inside * 1.01, "kick retrigger steps by %g (inside a hit: %g)", jump, inside);
+            printf("  kick retrigger: largest step %.3f across it, %.3f inside a hit\n", jump, inside);
+            CHECK(jump <= inside * 1.05, "kick retrigger steps by %g (inside a hit: %g)", jump, inside);
         }
     }
     /* every groove runs in Acoustic: the steps and hits as their bytes say, the output finite and under the ceiling
-       (COMP x Level: Acoustic's low drive leaves its peaks to Level, about 2 x Level where kick, snare and tom meet) */
+       (COMP x Level: Acoustic's low drive leaves its peaks to Level) */
     for (g = 0, bad = 0; g < DRUMCHAPEL_GROOVES; g++) {
         int fs = drumchapel_family_size(g);
         for (pat = 0; pat < (fs ? fs : (g ? 0 : 20)); pat++) {
@@ -347,7 +432,7 @@ static void acoustic(float *x, float *y)
         printf("  Acoustic rms %.3f peak %.3f (Rock, the default knobs, Level 1)\n", r2, pk2);
         CHECK(r2 > 0.1 && r2 < 0.35, "Acoustic: rms %g", r2);
     }
-    /* it sounds, and its kick and snare are at the knobs' levels: 0 silences them */
+    /* it sounds, and its voices are at the knobs' levels: 0 silences them */
     set(&p, 0.5f, 0, KIT_ACOUSTIC, 1, 1, 0, 0, 1); render(&s, &p, x, y, n, 16);
     CHECK(peak(y, n) > 0.5 && s.hits[KICK] > 0 && s.hits[SNARE] > 0, "Acoustic Rock: peak %g", peak(y, n));
     set(&p, 0.5f, 0, KIT_ACOUSTIC, 0, 0, 0, 0, 1); render(&s, &p, x, y, n, 16);
@@ -714,10 +799,12 @@ int main(void)
         set(&p, hv, (int)hv, (int)hv, hv, hv, hv, hv, hv);
         p.value[DC_GROOVE] = hv;
         if (kit == 1) for (i = 0; i < DC_NPARAMS; i++) p.value[i] = NAN;
+        float lim = kit == -1 ? kwf(drumchapel_kit_words(KIT_ACOUSTIC), DK_COMP) : 1.5f;   /* -1: Kit clamps to Acoustic,
+                                                    whose low drive leaves stacked hits to its ceiling, COMP x Level */
         render(&s, &p, x, y, N, 16);
         for (i = 0, bad = 0; i < N; i++) {
             float in = isfinite(x[i]) ? x[i] : 0.0f;
-            if (!isfinite(y[i]) || fabsf(y[i] - in) > 1.5f) bad++;
+            if (!isfinite(y[i]) || fabsf(y[i] - in) > lim) bad++;
         }
         CHECK(bad == 0, "hostile case %d: %d bad samples", kit, bad);
     }
@@ -884,7 +971,7 @@ int main(void)
                 unpoke();
             }
             printf("  %-6s toms %.0f / %.0f / %.0f / %.0f Hz\n", drumchapel_kit_name(kt), hz[0], hz[1], hz[2], hz[3]);
-            if (kt != KIT_BIT)
+            if (kt != KIT_BIT && !(kt == KIT_ACOUSTIC && drumchapel_sample_len(DEF_TOM)))   /* a sampled tom: its steps, in 14. */
                 CHECK(hz[0] > hz[1] && hz[1] > hz[2] && hz[2] > hz[3] && fabs(hz[3] / hz[0] - 0.5) < 0.12,
                       "%s toms not falling: %g %g %g %g", drumchapel_kit_name(kt), hz[0], hz[1], hz[2], hz[3]);
         }
@@ -908,7 +995,7 @@ int main(void)
         }
     }
 
-    /* 14. Acoustic: its kick and snare play the samples (or Punch's synthesised ones without samples_data.h) */
+    /* 14. Acoustic: its five voices play the samples (each its synthesised one without a hit in samples_data.h) */
     acoustic(x, y);
 
     /* 15. the user groove bank in an IR slot (Groove = User) */

@@ -238,7 +238,9 @@ class Rig:
             raise AssertionError(f'{label}: returns with the loop or PC stack not empty')
         lo = self.syms['SAVE']
         allowed = [(BO, BO + 16), (i0 + P_SLOT, i0 + P_SLOT + 1), (lo, lo + 22),
-                   (self.syms['SLOTS'], self.syms['SLOTS'] + sp.slotw * sp.nslots)] + list(getattr(sp, 'extra_writes', []))
+                   (self.syms['SLOTS'], self.syms['SLOTS'] + sp.slotw * sp.nslots)]
+        allowed += [(self.syms[x], self.syms[x] + y) if isinstance(x, str) else (x, y)     # (a table's name, its words)
+                    for x, y in getattr(sp, 'extra_writes', [])]
         stray = [a for a in writes if not any(x <= a < y for x, y in allowed)]
         if stray:
             raise AssertionError(f'{label}: wrote outside its memory: {[hex(a) for a in stray[:5]]}')

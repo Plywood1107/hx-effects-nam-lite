@@ -251,7 +251,7 @@ DM(10) Chug, DM(11) Tone (all 0..1), DM(13) Level (0..1).
 
 A drum machine block (an overlay on the mono Ratchet, tempo-synced; HANDOVER.md, "Five new overlay effects"). The
 guitar passes at exactly unity; four voices are added: kick, snare, hat and tom, synthesised but for the Acoustic
-kit's sampled kick and snare. Click's timing: an
+kit's, which play recorded hits. Click's timing: an
 integer phase, so every sixteenth lands on its exact sample for ever; the first sample after reset is step 0.
 
 **Grooves.** Groove 0, **Classic**, is the 20 original one-bar patterns (Rock, Half-Time, ... Fill). Grooves 1..11
@@ -296,31 +296,47 @@ the unit it sits inside Blob 0 in DDR2, right after Geiger's curves, and the ker
 `drumchapel.c`: Boom's toms long sines, Punch's swept with a tick, Tick's bongo-like, Bit's falling squares, Doom's
 tuned way down (floor ~28 Hz) and through its fuzz, Eighty's synth-drum sweeps, gated like its snare.
 
-**Acoustic** (kit 6) plays recorded samples for its kick and snare; its hat, tom and open hat are synthesised (a
-little metal under the hat's noise, a short-drop tom with a dark skin noise; its open hat, which also plays every
-cymbal of the grooves, is the closed hat a little open: the same tone, 1.75 x its decay, 0.7 x its level, so the
-crash and ride on every eighth stay short, with no sustained wash). The samples come from
-the user's own bounces (single hits, possibly of a commercial drum instrument), converted locally by
-`drumchapel/samples.py KICK SNARE` into `drumchapel/samples_data.h`, which is committed. Without it Acoustic's kick and snare are
-Punch's synthesised ones and everything still builds and checks. The converter (numpy): mono (the channels' mean),
-48 kHz through a fixed Kaiser-windowed sinc, the start at the quietest sample in the millisecond before the onset
-(30 % of the peak), the end 5 ms before the high band (first difference, 10 ms windows) next rises 6 dB over its
-quietest point (the next hit in the bounce), a raised-cosine fade over the last 30 %, both normalised to full scale,
-16 bits. With the user's two files: kick 10,844 samples (226 ms; the bounce's next kick starts at 238 ms, so a
-longer tail was not there to keep), snare 10,999 (229 ms, from its onset 25.4 ms in, cut before a noise burst at
-260 ms). 48 kHz was kept: both together are 10,922 words, well inside the Blob 0 buffer, so a lower rate would buy
-nothing. The table: 16-bit samples, two to a word (sample i in word i / 2, its low half when i is even; the snare
-starts on a word), `drumchapel_samples()`.
+**Acoustic** (kit 6) plays a recorded hit for each of its five definitions: kick, snare, closed hat, tom (at its
+four pitches) and open hat (which also plays every cymbal of the grooves). The hits (2026-11-27) are from **Naked
+Drums by Wilkinson Audio** (CC BY 4.0, the SFZ release at github.com/sfzinstruments/WilkinsonAudio.NakedDrums;
+credited in the top README): the hardest hit of each, its close mic mixed with the overheads, converted locally by
+`drumchapel/samples.py KICK SNARE HAT TOM OPENHAT` into `drumchapel/samples_data.h`, which is committed. The command,
+from these files of the release's `Samples/` folder (its names are coded; the SFZ mapping in `Data/` gives each
+drum, mic and velocity: the kit's second snare, tom 3, the top velocity's first round robin), renamed as shown:
+
+    kick_in  -Bottom_Black_D2_50_one-V4WI.flac    sn2_top -TopOne_Black_D2_50_one-19ON.flac   hat_cl_ch   China_Mics_A2_30_one-DUTK.flac
+    kick_sub -TopOne_Black_D2_50_one-6FQE.flac    sn2_bot -Bottom_Black_D2_50_one-8BQQ.flac   hat_cl_oh   OH_A2_30_one-PF2U.flac
+    kick_oh  -OH_Black_D2_50_one-Q5Q2.flac        sn2_oh  -OH_Black_D2_50_one-8VZB.flac       hat_open_ch China_Mics_F2_30_one-B9MO.flac
+    tom3_di  -TopOne_D3_30_one-9BS2.flac          tom3_oh -OH_D3_30_one-AATE.flac             hat_open_oh OH_F2_30_one-KL3V.flac
+
+    samples.py "kick_in.flac+0.5*kick_sub.flac+0.6*kick_oh.flac" "sn2_top.flac+0.4*sn2_bot.flac+0.6*sn2_oh.flac" \
+               "hat_cl_ch.flac+0.5*hat_cl_oh.flac" "tom3_di.flac+0.6*tom3_oh.flac" "hat_open_ch.flac+0.5*hat_open_oh.flac"
+ A voice without a hit (a "-" argument, or no samples_data.h at all)
+keeps its synthesised definition: Punch's kick and snare, Acoustic's own hat (a little metal under the noise), tom (a
+short drop with a dark skin noise) and open hat (the closed hat a little open); everything still builds and checks.
+The converter (numpy, FLAC through ffmpeg): each file mono (the channels' mean) at 48 kHz through a fixed
+Kaiser-windowed sinc, the files summed with their gains; the start at the quietest sample in the millisecond before
+the onset (30 % of the peak); the end at the voice's length (kick 350 ms, snare 400, hat 120, tom 500, open hat 800:
+the user's choice), or 5 ms before another hit in the file; a raised-cosine fade over the last 30 %; 24 kHz through
+the same resampler; normalised to full scale and coded as 8-bit mu-law (G.711, bits inverted; each sample the code
+that decodes nearest). The table (`drumchapel_samples()`): the five hits one after another, four bytes to a word,
+52,080 bytes = 13,020 words (the 16-bit kick and snare before took 10,922). The format was the user's choice after
+an ear test of 16-bit/48 kHz, mu-law/48 kHz and mu-law/24 kHz (mu-law's own error about 38 dB under the signal; 24 kHz
+loses what is above 11.6 kHz, which a snare and hats feel most).
 
 A sampled definition is marked by its PD word being 0 (a synthesised one always has PD > 0); its INC word is the
-sample's first index, SWEEP its length. A hit plays the sample from its start at the knob's level (Kick or Snare, no
-envelope); the voice stops at the sample's end. A retrigger while it sounds crossfades: the sounding hit keeps
-playing from where it was, its level falling linearly to 0 over 64 samples (1.3 ms), beside the new one; the largest
-output step across a kick retrigger is then smaller than inside a hit (0.09 against a plain restart's 0.68).
-Acoustic's chain is nearly transparent: DRIVE 0.25 and COMP 1 / (1.5 x 0.25), so a full-scale sample at Level 1
-comes out at its own level, reduced by the 1.5 z - 0.5 z^3 shaper by at most 2 % (0.2 dB) at its very peak; only
-stacked hits are limited (the ceiling is COMP x Level: about 2 x Level where kick, snare and tom meet at full
-knobs). At the default knobs its rms is like the other kits' (0.15).
+hit's first index in the table, SWEEP its length, TLEV its gain (`SAMPLE_GAIN` in `drumchapel.c`: the drums at 1.2,
+the hats at 0.6, 6 dB under). A voice keeps a 16.16 position and step: 0x8000 (half a 24 kHz sample a 48 kHz sample),
+or the tom's pitch (0x8000 x 1, 0.8, 0.64, 0.5, rounded: 32768, 26214, 20972, 16384), and plays the linear
+interpolation of samples i and i + 1 (0 past the end) at the knob's level x the gain, no envelope; it stops when the
+position passes the end (the floor tom lasts twice the hit). A hit while the voice sounds crossfades: the sounding
+hit, whatever it was, keeps playing from where it was at its own step, its level falling linearly to 0 over 64
+samples (1.3 ms), beside the new one. So the closed hat chokes a ringing open hat, as a drummer's foot does, and a
+retrigger has no click (the largest output step across a kick retrigger is that inside a hit, within 3 %).
+Acoustic's chain is nearly transparent: DRIVE 0.25 and COMP 1 / (1.5 x 0.25), so a hit comes out at its own level,
+reduced by the 1.5 z - 0.5 z^3 shaper by at most 3 % (0.26 dB) at its very peak; only stacked hits are limited (the
+ceiling is COMP x Level, 2.67 x). At the default knobs its rms is 0.125 and its peak 1.09 (Rock), among the other
+kits' (rms 0.10 .. 0.30).
 
 **Tests** (`drumchapel/test_drumchapel.c`): Click's exact timing over ten minutes at six tempos; every Classic
 pattern's hits; swing; unity pass-through; the kits' character; block sizes and interleaved instances; hostile
@@ -329,12 +345,15 @@ settings, recorded with the three-voice version); the bank's directory; every gr
 step its count mod the length, the hits its byte says, the wrap); a 29/4 groove for ten minutes; Groove and Pattern
 changes mid-play (the count continues, no step moves in time); the four tom pitches falling in every kit and silent
 at Kick 0; the open hat outlasting the closed one. The tests that need toms or open hats write their own short
-grooves into the bank, so they run without the converted data too. Acoustic: with the samples, its kick and snare
-output equals the stored sample x the knob, sample for sample through the kit's chain, at two levels; silence after
-the sample's end; retriggers (on the next step, runs of them, a groove) crossfading exactly as specified, and no
-larger step than inside a hit; the chain within 2.1 % of the sample; without them, its kick and snare definitions
-are Punch's word for word. Every groove runs in Acoustic (steps, hits, a bounded output). The Classic hashes cover
-the six synthesised kits, unchanged.
+grooves into the bank, so they run without the converted data too. Acoustic (section 14): each definition a sample
+(its bytes after the last one's, at full scale, ending at 0) or, without a hit, its synthesised definition (the kick
+and snare Punch's word for word); the mu-law decoder's 256 values; against an independent model of the voices, sample
+for sample through the chain: each voice alone at two levels with silence after its end, retriggered (the next step,
+runs, a fast groove), the tom at its four pitches (each lasting the hit / its pitch) and in a run of every pitch, the
+open hat choked by the closed one (a 64-sample crossfade, then only the closed hat), open and closed hats in turn,
+every voice at once; the chain within 3 % of the hit; a retrigger with no larger step than inside a hit. Every
+groove runs in Acoustic (steps, hits, a bounded output). The Classic hashes cover the six synthesised kits,
+unchanged.
 
 ### Drum Chapel on the SHARC (`drumchapel/sharc/`)
 

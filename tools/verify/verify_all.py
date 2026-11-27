@@ -223,7 +223,7 @@ if OVL:
         check(sm['addr'] == gr['bank'] + len(dc_bank) and sm['words'] == len(dc_samp) and sm['sampled'] == dcm.sampled()
               and dcm.SPEC.samp_addr == sm['addr'] and f'.equ T_SAMP, {sm["addr"]:#x}' in dcm.SPEC.extra_equ,
               f'Drum Chapel samples: {len(dc_samp)} words at DDR2 {sm["addr"]:#x} (right after the grooves, the kernel\'s T_SAMP)'
-              + ('' if sm['sampled'] else ': none, Acoustic plays Punch\'s kick and snare'))
+              + f' (the Acoustic hits, then the seven kits)')
         if dc_samp:
             check(b0[sm['addr'] - base: sm['addr'] - base + len(dc_samp)] == dc_samp and sm['addr'] - base + len(dc_samp) <= len(b0),
                   f'  its {len(dc_samp)} words are in Blob 0 at {sm["addr"] - base:#x}..{sm["addr"] - base + len(dc_samp):#x}, as converted')

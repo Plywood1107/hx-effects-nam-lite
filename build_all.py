@@ -179,8 +179,8 @@ GREASY_PARAMS = (    # the kernel reads words 5..11 and 13 (effects/greasy/sharc
 DRUMCHAPEL_PATTERNS = ['Rock', 'Half-Time', 'Four Floor', 'Disco', 'Shuffle', 'Motorik', 'Break', 'Funk', 'Boom Bap',
                        'Bossa', 'One Drop', 'Punk', 'Blast', 'Sludge', 'Trap', 'Two-Step', 'Gallop', 'Hats Only',
                        'Kick Only', 'Fill']
-DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty', 'Acoustic']   # Acoustic: sampled kick and snare
-# (effects/drumchapel/samples.py; samples_data.h, Punch's synthesised ones without it)
+DRUMCHAPEL_KITS = ['Boom', 'Punch', 'Tick', 'Bit', 'Doom', 'Eighty', 'Acoustic']   # Acoustic: five sampled hits
+# (effects/drumchapel/samples.py: samples_data.h; synthesised voices without it)
 # Groove 0 plays the 20 patterns above; 1..11 the families converted by effects/drumchapel/grooves.py (Classic when
 # its git-ignored output is missing), Pattern then the variation (mod the family's size)
 DRUMCHAPEL_GROOVES = ['Classic'] + [name for name, _ in dc_grooves.FAMILIES] + ['User']   # User: User IR slot 128 (grooves.py --user)
@@ -645,8 +645,8 @@ def main():
                 print(f'[+] Drum Chapel grooves: {dc.families()} of 11 families converted'
                       f'{"" if dc.families() else " (no grooves_data.h: the Groove knob plays Classic everywhere)"}; '
                       f'bank {len(dc_bank)} words at DDR2 {dc_at:#x}')
-                print(f'[+] Drum Chapel samples: ' + (f'{len(dc_samp)} words at DDR2 {dc_samp_at:#x} (the Acoustic kit\'s kick and snare)'
-                      if dc_samp else 'none (no samples_data.h: the Acoustic kit plays Punch\'s synthesised kick and snare)'))
+                print(f'[+] Drum Chapel samples and kits: {len(dc_samp)} words at DDR2 {dc_samp_at:#x} (the Acoustic kit\'s '
+                      f'{dc.sampled()} of 5 hits, {len(dc.sample_words())} words; then the seven kits, {len(dc.kit_words())})')
             o_words, ovl = ovl_stub_kernel.layout([m[:4] for m in ovl_stub_kernel.MEMBERS],
                                                   base + len(curves) + len(dc_bank) + len(dc_samp))
             pad = curves + dc_bank + dc_samp + o_words

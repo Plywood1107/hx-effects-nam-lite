@@ -77,10 +77,6 @@ kit-sounds: $(OUT)/render_kits
 	mkdir -p ../tools/groove-editor/sounds
 	$(OUT)/render_kits ../tools/groove-editor/sounds
 
-# formats_demo.py's renderer (needs out/dc_formats.h, which formats_demo.py writes)
-$(OUT)/dc_formats: drumchapel/render_formats.c $(OUT)/dc_formats.h $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
-	$(CC) $(CFLAGS) -o $@ drumchapel/render_formats.c $(COMMON) $(EFFECTS) $(LDLIBS)
-
 # the reference as a shared library, for the SHARC kernels' checks (ctypes)
 $(OUT)/libfx.so: $(COMMON) $(EFFECTS) $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -shared -fPIC -o $@ $(COMMON) $(EFFECTS) $(LDLIBS)

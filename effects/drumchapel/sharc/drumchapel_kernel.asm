@@ -5,9 +5,9 @@
 // Conventions as the other kernels (effects/README.md): once per 16-sample block, I0 = the instance's
 // DM block, I1 = 16 inputs, I2 = 16 outputs; R0-R15, I1-I4 and MODE1 come back unchanged; L1-L4 left
 // 0; no hardware loops; DM(3, I0) never touched; only P_SLOT (12) written; state in one of NSLOTS
-// claimed slots (no buffer anywhere else). Each voice's state: VW words from ST_V0, fields VS_*; a kit's
-// words from T_KIT + kit x DK_WORDS, fields DK_* and, per definition, DV_* (VS_DEF: the offset of the one a
-// voice plays, from its kit's first word).
+// claimed slots (no buffer anywhere else but T_KIT, this call's copy of its kit). Each voice's state: VW words from
+// ST_V0, fields VS_*; the kit's words at T_KIT (copied each call from T_DKIT + kit x DK_WORDS, in DDR2), fields DK_*
+// and, per definition, DV_* (VS_DEF: the offset of the one a voice plays, from the kit's first word).
 //
 // Knob words: DM(5) Time s/beat, DM(6) Pattern (int 0..19), DM(7) Kit (int 0..6), DM(8) Kick 0..1,
 //             DM(9) Snare 0..1, DM(10) Hat 0..1, DM(11) Swing 0..1, DM(13) Level 0..1, DM(14) Groove (int 0..12).
@@ -22,9 +22,11 @@
 // Groove x Pattern, (first step << 9) | length, then the steps, four bytes to a word from T_STEPS. Read only
 // when a step falls: the directory word and the step's word, two reads a sixteenth.
 //
-// The Acoustic kit's samples are a read-only table in DDR2 too, right after the bank (T_SAMP): 16-bit, two to a
-// word. A definition whose PD word is 0 is a sample (INC its first index, SWEEP its length); a voice playing one
-// reads one word a sample (two while a retriggered hit crossfades out), and stops at the sample's end.
+// The Acoustic kit's samples are a read-only table in DDR2 too, right after the bank (T_SAMP): 8-bit mu-law at
+// 24 kHz, four to a word. A definition whose PD word is 0 is a sample (INC its first index, SWEEP its length, TLEV its
+// gain); a voice playing one keeps a 16.16 position (VS_AGE) and step (VS_INC: 0x8000, or the tom's T_TSTEP) and
+// plays samples i and i + 1 interpolated (two word reads, two decodes: g_at, g_mu), four while the hit before it
+// fades out (VS_POS2, VS_INC2, VS_DEF2: the closed hat's choke of the open one), and stops at the sample's end.
 //
 // A call: the knobs; the tempo for the 16 samples (at most one step falls in a call: a sixteenth is at
 // least 1,200 samples, swing delays one by at most a third), and that step's byte from the bank; then each
@@ -171,8 +173,19 @@ k_divn:
     R5 = MIN(R5, R8);
     R8 = DK_WORDS;
     R5 = R5 * R8 (UUI);
-    R8 = T_KIT;
+    R8 = T_DKIT;
     R5 = R5 + R8;
+    I4 = R5;                            // (DDR2) its words -> T_KIT, this call's copy (the seven kits stay out of
+    R12 = I3;                           // the overlay data swapped in on every call)
+    I3 = T_KIT;
+    R8 = DK_WORDS;
+k_copy:
+    R9 = DM(I4, 1);
+    DM(I3, 1) = R9;
+    R8 = R8 - 1;
+    IF NE JUMP k_copy;
+    I3 = R12;
+    R5 = T_KIT;
 
     F15 = DM(13, I0);                   // Level (F4)
     CALL g_cl;
@@ -322,13 +335,15 @@ h_loop:
     R10 = 3;
     COMP(R13, R10);
     IF EQ F2 = PASS F15;
-    DM(VS_DEF, I3) = R9;
-    DM(VS_TUNE, I3) = F2;
-    R9 = R9 + R5;
-    I4 = R9;
+    R10 = R9 + R5;
+    I4 = R10;
     R10 = DM(DV_PD, I4);                // PD 0: a sample
     R10 = PASS R10;
     IF EQ JUMP h_samp;
+    DM(VS_DEF, I3) = R9;
+    DM(VS_TUNE, I3) = F2;
+    R8 = NOCACHE;
+    DM(VS_CI, I3) = R8;
     F8 = DM(DV_TLEV, I4);
     F8 = F8 * F7, F9 = DM(DV_NLEV, I4);
     F9 = F9 * F7, DM(VS_TE, I3) = F8;
@@ -548,33 +563,65 @@ k_exit:
     NOP;
     RTS (LR);
 
-// ---- a sampled voice's hit (from h_loop; F7 its knob's level): the sounding hit becomes the fading one, from
-//      where it is (NE its level, falling by PE = NE / 64 a sample, POS2 its place); the new one from 0 at F7
+// ---- a sampled voice's hit (from h_loop; R9 its definition's offset, I4 its words, F7 its knob's level): the
+//      sounding hit becomes the fading one, from where it is (NE its level, falling by PE = NE / 64 a sample; POS2,
+//      INC2, DEF2 its place, step and definition); the new one from 0 at TLEV x F7, its step 0x8000 or the tom's
 h_samp:
+    R10 = DM(VS_DEF, I3);
+    DM(VS_DEF2, I3) = R10;
+    DM(VS_DEF, I3) = R9;
+    DM(VS_TUNE, I3) = F2;
     F8 = DM(VS_TE, I3);
-    R9 = DM(VS_AGE, I3);
+    R10 = DM(VS_AGE, I3);
     DM(VS_NE, I3) = F8;
-    DM(VS_POS2, I3) = R9;
+    DM(VS_POS2, I3) = R10;
+    R10 = DM(VS_INC, I3);
+    DM(VS_INC2, I3) = R10;
+    R10 = DM(VS_CI, I3);                // its decoded samples go with it
+    DM(VS_CI2, I3) = R10;
+    R10 = DM(VS_CA, I3);
+    DM(VS_CA2, I3) = R10;
+    R10 = DM(VS_CB, I3);
+    DM(VS_CB2, I3) = R10;
+    R10 = NOCACHE;
+    DM(VS_CI, I3) = R10;
     R10 = K_XF;
     F8 = F8 * F10;
     DM(VS_PE, I3) = F8;
-    DM(VS_TE, I3) = F7;
+    F8 = DM(DV_TLEV, I4);
+    F8 = F8 * F7;
+    DM(VS_TE, I3) = F8;
     R8 = 0;
     DM(VS_AGE, I3) = R8;
+    R8 = 0x8000;
+    R10 = 3;
+    COMP(R13, R10);
+    IF NE JUMP h_sinc;
+    R10 = LSHIFT R0 BY -5;              // the tom: its pitch (the byte's bits 5-6) -> its step
+    R8 = 3;
+    R10 = R10 AND R8;
+    R8 = T_TSTEP;
+    R10 = R10 + R8;
+    I4 = R10;
+    R8 = DM(0, I4);
+h_sinc:
+    DM(VS_INC, I3) = R8;
     JUMP h_next;
 
-// ---- a sampled voice (from v_loop; I4 its definition: INC its first index, SWEEP its length): sample[AGE] x TE,
-//      TE = 0 at its end (the voice stops); a retriggered hit's sample[POS2] x NE while NE > 0, NE falling by PE
+// ---- a sampled voice (from v_loop; I4 its definition: INC its first index, SWEEP its length): the hit at its
+//      position x TE while the position is inside it (then TE = 0: the voice stops); the hit before it at POS2 x NE
+//      while NE > 0, its definition DEF2 a sample and POS2 inside it, NE falling by PE
 v_samp:
+    R8 = DM(VS_AGE, I3);
     R11 = DM(DV_INC, I4);
     R12 = DM(DV_SWEEP, I4);
-    R8 = DM(VS_AGE, I3);
-    COMPU(R8, R12);
+    R9 = LSHIFT R8 BY -16;
+    COMPU(R9, R12);
     IF GE JUMP vs_end;
-    R9 = R8 + 1;
-    DM(VS_AGE, I3) = R9;
-    R9 = R11 + R8;
-    CALL g_smp;
+    R10 = DM(VS_INC, I3);
+    R10 = R8 + R10;
+    DM(VS_AGE, I3) = R10;
+    CALL g_at;
     F10 = DM(VS_TE, I3);
     F9 = F9 * F10;
     F3 = F3 + F9;
@@ -586,13 +633,24 @@ vs_old:
     F8 = DM(VS_NE, I3);
     F8 = PASS F8;
     IF LE JUMP vs_off;
+    R10 = DM(VS_DEF2, I3);
+    R10 = R10 + R5;
+    I4 = R10;
+    R10 = DM(DV_PD, I4);
+    R10 = PASS R10;
+    IF NE JUMP vs_off;
+    R11 = DM(DV_INC, I4);
+    R12 = DM(DV_SWEEP, I4);
     R8 = DM(VS_POS2, I3);
-    COMPU(R8, R12);
+    R9 = LSHIFT R8 BY -16;
+    COMPU(R9, R12);
     IF GE JUMP vs_off;
-    R9 = R8 + 1;
-    DM(VS_POS2, I3) = R9;
-    R9 = R11 + R8;
-    CALL g_smp;
+    R10 = DM(VS_INC2, I3);
+    R10 = R8 + R10;
+    DM(VS_POS2, I3) = R10;
+    MODIFY(I3, VS_CI2 - VS_CI);         // its own decoded samples
+    CALL g_at;
+    MODIFY(I3, VS_CI - VS_CI2);
     F10 = DM(VS_NE, I3);
     F9 = F9 * F10;
     F3 = F3 + F9;
@@ -605,21 +663,77 @@ vs_off:
     DM(VS_NE, I3) = R8;
     JUMP v_next;
 
-// ---- F9 = sample R9 of the table (DDR2): the word T_SAMP + R9 / 2, its low half if R9 is even, as q / 32768.
-//      Uses R1, R10, I4.
-g_smp:
-    R10 = LSHIFT R9 BY -1;
-    R1 = T_SAMP;
-    R10 = R10 + R1;
-    I4 = R10;
-    R10 = DM(0, I4);                    // (DDR2)
-    BTST R9 BY 0;
-    IF NOT SZ JUMP g_shi;
-    R10 = LSHIFT R10 BY 16;
-g_shi:
-    R10 = ASHIFT R10 BY -16;
-    R1 = -15;
-    F9 = FLOAT R10 BY R1;
+// ---- F9 = a sampled hit at 16.16 position R8 (R9 = R8 >> 16, inside it; R11 its first index, R12 its length):
+//      a + (b - a) x f, a = sample i, b = sample i + 1 (0 past the hit's end), f = (R8 & 0xFFFF) / 65536, as
+//      drumchapel_sample_at. a and b are kept decoded (VS_CI = i, VS_CA, VS_CB: a step under one sample uses each i
+//      at least twice, so one decode a 24 kHz sample, none in between); a hit sets VS_CI to NOCACHE. Uses R1,
+//      R8-R12, I4.
+g_at:
+    R8 = LSHIFT R8 BY 16;
+    R8 = LSHIFT R8 BY -16;
+    R1 = -16;
+    F8 = FLOAT R8 BY R1;                // f
+    R10 = DM(VS_CI, I3);
+    COMP(R9, R10);
+    IF EQ JUMP g_mix;                   // the same i: a and b kept
+    R12 = R11 + R12;                    // the hit's end, in the table
+    R11 = R11 + R9;                     // sample i, in the table
+    R10 = R10 + 1;
+    COMP(R9, R10);
+    DM(VS_CI, I3) = R9;
+    IF NE JUMP g_two;
+    F10 = DM(VS_CB, I3);                // the next i: a is the old b
+    JUMP g_newb;
+g_two:
+    R10 = PASS R11;
+    CALL g_mu;
+g_newb:
+    DM(VS_CA, I3) = F10;
+    R10 = R11 + 1;
+    COMPU(R10, R12);
+    IF GE JUMP g_b0;
+    CALL g_mu;
+    JUMP g_bs;
+g_b0:
+    R10 = 0;
+g_bs:
+    DM(VS_CB, I3) = F10;
+g_mix:
+    F10 = DM(VS_CA, I3);
+    F12 = DM(VS_CB, I3);
+    F12 = F12 - F10;
+    F12 = F12 * F8;
+    F9 = F10 + F12;
+    RTS;
+
+// ---- F10 = sample R10 of the table (DDR2): byte R10 % 4 of word T_SAMP + R10 / 4, a mu-law code decoded as
+//      drumchapel_ulaw (v = its bits inverted; t = ((v & 15) << 3 | 0x84) << (v >> 4 & 7); +-(t - 0x84) / 32768,
+//      negative when v & 0x80). Uses R1, R9, R10, I4.
+g_mu:
+    R1 = LSHIFT R10 BY -2;
+    R9 = T_SAMP;
+    R1 = R1 + R9;
+    I4 = R1;
+    R1 = DM(0, I4);                     // (DDR2) four samples
+    R10 = LSHIFT R10 BY 30;
+    R10 = LSHIFT R10 BY -27;            // 8 x (R10 % 4)
+    R10 = -R10;
+    R1 = LSHIFT R1 BY R10;
+    R1 = NOT R1;
+    R1 = LSHIFT R1 BY 24;               // v at the top: its sign bit 31, exponent 28-30, mantissa 24-27
+    R10 = LSHIFT R1 BY 4;
+    R10 = LSHIFT R10 BY -25;            // mantissa << 3
+    R9 = 0x84;
+    R10 = R10 + R9;
+    R9 = LSHIFT R1 BY 1;
+    R9 = LSHIFT R9 BY -29;            // exponent
+    R10 = LSHIFT R10 BY R9;
+    R9 = 0x84;
+    R10 = R10 - R9;
+    R1 = PASS R1;
+    IF LT R10 = -R10;
+    R9 = -15;
+    F10 = FLOAT R10 BY R9;
     RTS;
 
 // ---- F9 = the parabolic sine of the phase F9 (sine_p). Uses F10, F11.

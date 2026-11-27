@@ -1,5 +1,5 @@
 /* drumchapel.h - "Drum Chapel": a basic drum machine block. An original algorithm; no vendor code. The Acoustic
- * kit's kick and snare are samples converted by samples.py.
+ * kit's five voices are samples converted by samples.py.
  *
  * The guitar passes through at exactly unity (a non-finite input sample is replaced by 0); synthesised drums
  * are added. Four voices (kick, snare, hat, tom) play grooves of sixteenths, one byte a step (DC_B_*).
@@ -36,13 +36,18 @@
  * The tom plays at the Kick knob's level.
  *
  * Samples (the Acoustic kit, kit 6): a definition whose PD word is 0 is a sample (a synthesised one always has
- * PD > 0); its INC word is the sample's first index in the sample table (drumchapel_samples), SWEEP its length.
- * Acoustic's kick and snare are such definitions when samples_data.h exists (samples.py);
- * without it they are Punch's synthesised kick and snare. The table: 16-bit samples
- * at 48 kHz, two to a word, sample i in word i / 2, its low half when i is even; a sample is q / 32768.
- * A sampled voice plays sample[age] x TE (TE = the knob's level at the hit, no envelope) and stops at the
- * sample's end (TE = 0). A retrigger while it sounds crossfades: the sounding hit keeps playing from its place
- * (POS2) at a level (NE) that falls linearly to 0 in 64 samples (PE = NE / 64 a sample), beside the new one.
+ * PD > 0); its INC word is the sample's first index in the sample table (drumchapel_samples), SWEEP its length,
+ * TLEV its gain (how loud it plays beside the others). Each of Acoustic's five definitions is such a definition when
+ * samples_data.h holds its hit (samples.py); without it, it keeps its synthesised one (Punch's kick and snare,
+ * Acoustic's own hat, tom and open hat). The table: 8-bit mu-law (G.711, bits inverted: drumchapel_ulaw) at 24 kHz,
+ * four to a word, sample i in word i / 4, bits 8 x (i % 4) up; the voices one after another (DEF_* order).
+ * A sampled voice keeps a 16.16 position (AGE) in the sample and a step (INC: 0x8000, half a 24 kHz sample a 48 kHz
+ * sample, or the tom's pitch: DRUMCHAPEL_TUNE x 0x8000, rounded) and plays, until the position passes the end
+ * (TE = 0, the voice stops), the linear interpolation a + (b - a) x f of samples i = pos >> 16 and i + 1 (0 past
+ * the end), f = (pos & 0xFFFF) / 65536, x TE (TLEV x the knob's level at the hit, no envelope). A hit while it
+ * sounds crossfades: the sounding hit, whatever it was (the open hat when the closed one comes: the choke), keeps
+ * playing from its place (POS2, its step INC2, its definition DEF2) at a level (NE) that falls linearly to 0 in 64
+ * samples (PE = NE / 64 a sample), beside the new one; a fading hit whose definition is not a sample is dropped.
  * Acoustic's DRIVE is low (0.25, COMP 1 / (1.5 x 0.25)): a full-scale sample passes the kit's clip and
  * 1.5 z - 0.5 z^3 shaper untouched but for 2 % (0.2 dB) at its very peak.
  *
@@ -114,6 +119,7 @@ typedef struct {
     uint32_t def;                          /* the kit definition it plays (DEF_*) */
     float tune;                            /* its rate x (the tom's pitch; 1 otherwise) */
     uint32_t pos2;                         /* a sampled voice: the crossfading hit's place (NE its level, PE its fall) */
+    uint32_t inc, inc2, def2;              /* a sampled voice: its step (16.16), the crossfading hit's step and definition */
 } DrumVoice;
 
 typedef struct {
@@ -138,16 +144,14 @@ uint32_t drumchapel_groove_len(int groove, int pattern);
 uint32_t drumchapel_groove_step(int groove, int pattern, uint32_t k);   /* step k's byte */
 const uint32_t *drumchapel_metal(void);             /* the six squares' phase increments (2^32 = one cycle) */
 const uint32_t *drumchapel_tune(void);              /* the tom's four pitches, x its rate (float bits) */
+const uint32_t *drumchapel_tune_step(void);         /* the same as a sampled tom's 16.16 steps (0x8000 x pitch) */
 const uint32_t *drumchapel_samples(uint32_t *nwords);   /* the sample table (above); 0 words without samples_data.h */
-int drumchapel_sampled(void);                       /* 1: samples_data.h was there (Acoustic plays its samples) */
-uint32_t drumchapel_sample_first(int voice);        /* KICK or SNARE: its first index in the table, and length */
-uint32_t drumchapel_sample_len(int voice);
-float drumchapel_sample(uint32_t i);                /* table sample i, as a float (q / 32768) */
-/* The packed sample format under test (2026-11-27, Part A): an 8-bit mu-law byte (G.711, its bits inverted) -> its
-   value / 32768 (exact in a float); and the linear interpolation at position pos (16.16 fixed point) of n samples
-   s[], 0 past the end: how a 24 kHz sample plays at 48 kHz (pos += 0x8000 a sample) or at a tom's rate. */
-float drumchapel_ulaw(uint8_t u);
-float drumchapel_interp(const float *s, uint32_t n, uint32_t pos);
+int drumchapel_sampled(void);                       /* how many of Acoustic's five definitions are samples */
+uint32_t drumchapel_sample_first(int def);          /* DEF_*: its first index in the table, and its length (0: none) */
+uint32_t drumchapel_sample_len(int def);
+float drumchapel_sample(uint32_t i);                /* table sample i, as a float (drumchapel_ulaw) */
+float drumchapel_sample_at(uint32_t first, uint32_t len, uint32_t pos);   /* the interpolation at 16.16 pos (above) */
+float drumchapel_ulaw(uint8_t u);                   /* a mu-law byte -> its value / 32768 (exact in a float) */
 /* The User IR slot the user groove bank is read from (2,048 float bits, sample 0 first; 0: an empty slot). The
    reference cannot see the unit's IR store: the tests and the kernel check give it the slot this way. */
 void drumchapel_set_user_slot(void *state, const uint32_t *words);
