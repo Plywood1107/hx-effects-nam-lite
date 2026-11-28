@@ -200,7 +200,7 @@ DRUMCHAPEL_PARAMS = (   # slot 1 is Time with the tempo-sync pair (sync_knob_par
 )
 assert len(DRUMCHAPEL_GROOVES) == 13 and len(DRUMCHAPEL_KITS) == 7
 HOSTPROBE_PARAMS = (    # slot 1 is Time with the tempo-sync pair, as Drum Chapel's (unused); the kernel reads words 6 and 13
-    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Mode', 'Mode', LIST, {0: 'Report', 1: 'Pass'}, 0),
+    (2, 6,  'HD2_DelayMultiPassMono', 'Pattern', 'Mode', 'Mode', LIST, {0: 'Report', 1: 'Pass', 2: 'Load'}, 0),
     (3, 13, 'HD2_AmpLine6Clarity', 'ChVol', 'Level', 'Level', 'percent', (0.0, 1.0), 0.25),
 )
 PUREWHITEY_PARAMS = (  # the kernel reads words 5..11 and 13 (effects/purewhitey/sharc); one slot, a 4,096-word ring in DDR2
@@ -247,7 +247,7 @@ EFFECTS = {
                        meta_drop=('followEnable', 'loadBypassed'), meta_type='digital',
                        plain_delay=True),   # block type 0x18 -> 0x08 and off the app's special-delay list (tools/special_delay_patch.py); what made the footswitch work on the unit   # Click's timing; grooves bank in Blob 0
     # --hostprobe: a diagnostic in Drum Chapel's place, the same host and host changes; its member asks for SDRAM
-    'hostprobe': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayHostProbe', display='Probe', cost=700, prim=0x23AC,
+    'hostprobe': dict(takeover='VIC_DelayRatchetMono', name='HD2_DelayHostProbe', display='Probe', cost=700, prim=0x0104,   # Drum Chapel's (0x23ac froze Nonlinear)
                       params=HOSTPROBE_PARAMS, entry='OVL_ENTRY_HOSTPROBE', sync=True,
                       meta_drop=('followEnable', 'loadBypassed'), meta_type='digital', plain_delay=True,
                       sdram=0x10000),   # = hostprobe.h HOSTPROBE_SDR_REQ; worst 987 cycles in ssim

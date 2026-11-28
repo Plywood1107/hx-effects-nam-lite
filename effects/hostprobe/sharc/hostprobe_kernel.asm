@@ -8,7 +8,8 @@
 // in one of NSLOTS claimed slots. The one other write: the memory test's two words in the instance's SDRAM block,
 // only when DM(2, I3) words 6 and 7 describe a block of the size the graph asked for (hostprobe.h).
 //
-// Knob words: DM(6) Mode (int 0..1), DM(13) Level 0..1. (DM(5), the synced Time, is not read.)
+// Knob words: DM(6) Mode (int 0..2: Report, Pass, Load), DM(13) Level 0..1. (DM(5), the synced Time, is not read.)
+// Read only, outside the instance: DM(IDLE_ADDR), the DSP's idle word, each call (its lowest this frame in ST_IDLEMIN).
 // Registers in the transmitter loop: R10 the symbol's sample, R11 the symbol, R12 the sine phase, R13 its step,
 // F14 Level, R15 the samples left (Mode is in the slot, ST_MODE); latch (CALL) uses R0-R9 and I4 only.
 
@@ -98,6 +99,8 @@ c_zero:
     DM(I4, 1) = R13;
     R14 = R14 - 1;
     IF NE JUMP c_zero;
+    R13 = -1;                           // the idle word's lowest: none yet (0xffffffff)
+    DM(ST_IDLEMIN, I3) = R13;
 c_have:
     DM(S_LAST, I3) = R9;
 
@@ -105,7 +108,7 @@ c_have:
     R14 = DM(6, I0);                    // Mode, kept in the slot (the loop has no register left for it)
     R8 = 0;
     R14 = MAX(R14, R8);
-    R8 = 1;
+    R8 = 2;
     R14 = MIN(R14, R8);
     DM(ST_MODE, I3) = R14;
     F14 = DM(13, I0);                   // Level
@@ -116,6 +119,12 @@ c_have:
     R8 = DM(ST_CALLS, I3);
     R8 = R8 + 1;
     DM(ST_CALLS, I3) = R8;
+    R8 = DM(IDLE_ADDR);                 // the DSP's idle word: keep this frame's lowest (unsigned)
+    R7 = DM(ST_IDLEMIN, I3);
+    COMPU(R8, R7);
+    IF GE JUMP i_keep;
+    DM(ST_IDLEMIN, I3) = R8;
+i_keep:
 
     // ---- the meter: the 16 inputs, before any output is written
     F0 = DM(ST_PEAK, I3);
@@ -170,17 +179,17 @@ t_l:
     R11 = PASS R11;
     IF NE JUMP t_kind;
     CALL latch;
-t_kind:
-    R8 = NPILOT;
+t_kind:                                 // this frame's geometry (latch set it by the Mode)
+    R8 = DM(ST_FPIL, I3);
     COMP(R11, R8);
     IF GE JUMP t_bits;
     R13 = 6;
     JUMP t_sym;
 t_bits:
-    R8 = NPILOT + NBITS;
+    R8 = DM(ST_FPB, I3);
     COMP(R11, R8);
     IF GE JUMP t_gap;
-    R8 = NPILOT;
+    R8 = DM(ST_FPIL, I3);
     R8 = R11 - R8;                      // the bit
     R9 = LSHIFT R8 BY -5;               // its word
     R0 = ST_FR0;
@@ -218,12 +227,12 @@ t_ph:
     R12 = R12 - R8;
 t_pos:
     R10 = R10 + 1;
-    R8 = SYM;
+    R8 = DM(ST_FSYM, I3);
     COMP(R10, R8);
     IF LT JUMP t_out;
     R10 = 0;
     R11 = R11 + 1;
-    R8 = NSYM;
+    R8 = DM(ST_FNSYM, I3);
     COMP(R11, R8);
     IF LT JUMP t_out;
     R11 = 0;
@@ -231,9 +240,10 @@ t_pos:
     R8 = R8 + 1;
     DM(ST_FRAMES, I3) = R8;
 t_out:
-    R8 = DM(ST_MODE, I3);
-    R8 = PASS R8;
-    IF EQ JUMP t_w;
+    R8 = DM(ST_MODE, I3);               // Pass (1) only
+    R0 = 1;
+    COMP(R8, R0);
+    IF NE JUMP t_w;
     F7 = F6;
 t_w:
     DM(I2, 1) = F7;
@@ -327,6 +337,18 @@ l_write:
     R7 = PAT_B;
     DM(0, I4) = R7;
 l_frame:
+    R5 = DM(ST_MODE, I3);
+    R6 = 2;
+    COMP(R5, R6);
+    IF EQ JUMP l_load;
+    R5 = SYM;                           // Report and Pass: the long frame (hostprobe.h)
+    DM(ST_FSYM, I3) = R5;
+    R5 = NPILOT;
+    DM(ST_FPIL, I3) = R5;
+    R5 = NPILOT + NBITS;
+    DM(ST_FPB, I3) = R5;
+    R5 = NSYM;
+    DM(ST_FNSYM, I3) = R5;
     R9 = 0;                             // the sum of words 1..32
     R0 = SYNC;
     DM(ST_FR0, I3) = R0;
@@ -420,13 +442,44 @@ l_frame:
     R0 = DM(15, I4);
     DM(ST_FR29, I3) = R0;
     R9 = R9 + R0;
-    R0 = SDR_REQ;
+    R0 = DM(ST_IDLEMIN, I3);            // the idle word's lowest since the last frame, then reset
     DM(ST_FR30, I3) = R0;
     R9 = R9 + R0;
+    R1 = -1;
+    DM(ST_IDLEMIN, I3) = R1;
     R0 = WIN_SAMPLES;
     DM(ST_FR31, I3) = R0;
     R9 = R9 + R0;
-    R0 = 0;
+    R0 = DM(IDLE_ADDR);                 // the idle word now
     DM(ST_FR32, I3) = R0;
+    R9 = R9 + R0;
     DM(ST_FR33, I3) = R9;
+    RTS;
+
+l_load:                                 // Load: six words of long symbols (hostprobe.h, HOSTPROBE_L*)
+    R5 = LSYM;
+    DM(ST_FSYM, I3) = R5;
+    R5 = LPILOT;
+    DM(ST_FPIL, I3) = R5;
+    R5 = LPILOT + LNBITS;
+    DM(ST_FPB, I3) = R5;
+    R5 = LNSYM;
+    DM(ST_FNSYM, I3) = R5;
+    R0 = SYNC;
+    DM(ST_FR0, I3) = R0;
+    R0 = MAGIC_L;
+    DM(ST_FR1, I3) = R0;
+    R9 = R0;
+    R0 = DM(ST_FRAMES, I3);
+    DM(ST_FR2, I3) = R0;
+    R9 = R9 + R0;
+    R0 = DM(IDLE_ADDR);
+    DM(ST_FR3, I3) = R0;
+    R9 = R9 + R0;
+    R0 = DM(ST_IDLEMIN, I3);
+    DM(ST_FR4, I3) = R0;
+    R9 = R9 + R0;
+    R1 = -1;
+    DM(ST_IDLEMIN, I3) = R1;
+    DM(ST_FR5, I3) = R9;
     RTS;

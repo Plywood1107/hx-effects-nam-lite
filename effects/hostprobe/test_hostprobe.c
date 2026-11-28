@@ -90,7 +90,7 @@ int main(void)
     CHECK(w[7] == 0 && w[4] == 0, "frame 0 has no window yet");
     CHECK(w[8] == 1 && w[9] == 0, "memory test written: %u %u", w[8], w[9]);
     CHECK(w[10] == 0x11 && w[12] == 0xb7010 && w[14] == 0x1000 && w[20] == 0x300000 && w[21] == 0x310000, "host words");
-    CHECK(w[30] == HOSTPROBE_SDR_REQ && w[31] == 48000, "constants");
+    CHECK(w[30] == 0 && w[31] == 48000 && w[32] == 0, "idle words (none set) and the window");
     uint32_t sum = 0;
     for (int k = 1; k <= 32; k++) sum += w[k];
     CHECK(w[33] == sum, "checksum");
@@ -140,6 +140,43 @@ int main(void)
     hostprobe_set_host(st, entry, inst);
     run(st, 0, 1.0f, in, out, FRAME);
     CHECK(decode(out, 1.0f, w) && w[8] == 1, "a block 0x400 larger is tested");
+
+    /* the idle word: frame 1 reports the lowest value seen since frame 0 latched (word 30) and the value at its own
+       start (word 32); the lowest is then reset */
+    fx_hostprobe.reset(st, 48000.0f);
+    hostprobe_set_host(st, entry, inst);
+    hostprobe_set_idle(st, 0x500);
+    run(st, 0, 0.25f, in, out, FRAME / 2);              /* frame 0 latches 0x500; then 0x500 */
+    hostprobe_set_idle(st, 0x300);
+    run(st, 0, 0.25f, in + FRAME / 2, out + FRAME / 2, 16 * 8);
+    hostprobe_set_idle(st, 0x700);
+    run(st, 0, 0.25f, in + FRAME / 2 + 128, out + FRAME / 2 + 128, FRAME + FRAME / 2 - 128);
+    CHECK(decode(out, 0.25f, w) && w[30] == 0x500 && w[32] == 0x500, "frame 0 idle words %x %x", w[30], w[32]);
+    CHECK(decode(out + FRAME, 0.25f, w) && w[30] == 0x300 && w[32] == 0x700, "frame 1 idle words %x %x", w[30], w[32]);
+
+    /* Mode Load: frames of HOSTPROBE_LNSYM symbols of HOSTPROBE_LSYM samples, six words */
+    {
+        HostprobeState *hs = st;
+        const size_t LF = (size_t)HOSTPROBE_LNSYM * HOSTPROBE_LSYM;
+        fx_hostprobe.reset(st, 48000.0f);
+        hostprobe_set_host(st, entry, inst);
+        hostprobe_set_idle(st, 0x40);
+        run(st, 2, 0.5f, in, out, 16 * 4);                  /* frame 0 latched at the first sample */
+        CHECK(hs->fsym == HOSTPROBE_LSYM && hs->fnsym == HOSTPROBE_LNSYM && hs->frame[1] == HOSTPROBE_MAGIC_L &&
+              hs->frame[3] == 0x40 && hs->frame[4] == 0x40 && hs->frame[5] == HOSTPROBE_MAGIC_L + 0x40 + 0x40,
+              "load frame 0: %x %x %x %x", hs->frame[1], hs->frame[3], hs->frame[4], hs->frame[5]);
+        hostprobe_set_idle(st, 0x20);
+        run(st, 2, 0.5f, in, out, 16 * 4);
+        hostprobe_set_idle(st, 0x90);
+        run(st, 2, 0.5f, in, out, LF - 16 * 8);             /* to the end of frame 0 exactly */
+        CHECK(hs->frames == 1 && hs->sidx == 0 && hs->spos == 0, "a load frame is %zu samples", LF);
+        run(st, 2, 0.5f, in, out, 16);                      /* frame 1 latches */
+        CHECK(hs->frame[2] == 1 && hs->frame[3] == 0x90 && hs->frame[4] == 0x20 &&
+              hs->frame[5] == HOSTPROBE_MAGIC_L + 1 + 0x90 + 0x20, "load frame 1: %x %x %x", hs->frame[2], hs->frame[3], hs->frame[4]);
+        float mx = 0.0f;
+        for (size_t i = 0; i < 16; i++) mx = fmaxf(mx, fabsf(out[i]));
+        CHECK(mx > 0.0f && mx <= 0.5f * 1.0001f, "load mode plays its tones at Level (%g)", (double)mx);
+    }
 
     printf("hostprobe: %d checks, %d failures\n", checks, fails);
     free(st);

@@ -26,13 +26,17 @@ import ssim  # noqa: E402
 WIN_CALLS, SYM, NPILOT, NWORDS, NGAP, NSIN = 3000, 120, 80, 34, 40, 48
 NBITS = 32 * NWORDS
 NSYM = NPILOT + NBITS + NGAP
-SYNC, MAGIC, SDR_REQ, PAT_A, PAT_B = 0x9E3779B9, 0x50524232, 0x10000, 0xA5C3F00D, 0x5A3C0FF2
+SYNC, MAGIC, SDR_REQ, PAT_A, PAT_B = 0x9E3779B9, 0x50524233, 0x10000, 0xA5C3F00D, 0x5A3C0FF2
+IDLE_ADDR, IDLE_TEST = 0xC28C9, 0x42500000      # the DSP's idle word (hostprobe.h); a value for the check
+LSYM, LPILOT, LNWORDS, LNGAP, MAGIC_L = 480, 20, 6, 10, 0x5052424C   # Mode Load (hostprobe.h)
+LNBITS = 32 * LNWORDS
+LNSYM = LPILOT + LNBITS + LNGAP
 FRAME_SAMPLES = NSYM * SYM
 NSLOTS = 2
 MAX_CODE, MAX_DATA = 515, 452                  # the overlay region today (Drum Chapel's), which it replaces
 
 STATE = ['PEAK', 'SQ', 'SUM', 'WCALLS', 'WIN', 'LPEAK', 'LSQ', 'LSUM', 'LWIN', 'SPOS', 'SIDX', 'PH', 'STEP', 'FRAMES',
-         'CALLS', 'MSTAT', 'MBAD', 'MODE'] + [f'FR{k}' for k in range(NWORDS)]
+         'CALLS', 'MSTAT', 'MBAD', 'MODE', 'IDLEMIN', 'FSYM', 'FPIL', 'FPB', 'FNSYM'] + [f'FR{k}' for k in range(NWORDS)]
 
 # The host in the check: a call-list entry whose word 2 points at an instance struct
 ENTRY, STRUCT = 0xB7000, 0xB7010
@@ -56,17 +60,19 @@ def make_spec(block=True):
                    state=STATE, constants={}, nslots=NSLOTS, tables=(('T_SIN', sin),), max_cycles=1500,
                    extra_equ=[f'.equ {k}, {v:#x}' for k, v in dict(
                        WIN_CALLS=WIN_CALLS, WIN_SAMPLES=16 * WIN_CALLS, SYM=SYM, NPILOT=NPILOT, NBITS=NBITS, NSYM=NSYM,
-                       NSIN=NSIN, SYNC=SYNC, MAGIC=MAGIC, SDR_REQ=SDR_REQ, PAT_A=PAT_A, PAT_B=PAT_B).items()])
+                       NSIN=NSIN, SYNC=SYNC, MAGIC=MAGIC, SDR_REQ=SDR_REQ, PAT_A=PAT_A, PAT_B=PAT_B, IDLE_ADDR=IDLE_ADDR,
+                       LSYM=LSYM, LPILOT=LPILOT, LNBITS=LNBITS, LNSYM=LNSYM, MAGIC_L=MAGIC_L).items()])
     spec.places['b2'] = (0xC4EF8, 0xC5554, 0xE4850)       # a probe-only placement, for the check
     entry, inst = host_words(block)
     spec.i3 = ENTRY
-    spec.ext = [(ENTRY, entry), (STRUCT, inst), (SDR_A, [0]), (SDR_A + SDR_REQ - 1, [0])]
+    spec.ext = [(ENTRY, entry), (STRUCT, inst), (SDR_A, [0]), (SDR_A + SDR_REQ - 1, [0]), (IDLE_ADDR, [IDLE_TEST])]
     spec.extra_writes = [(SDR_A, SDR_A + 1), (SDR_A + SDR_REQ - 1, SDR_A + SDR_REQ)] if block else []
 
     def ref_setup(lib_, st):
         e = (ctypes.c_uint32 * 4)(*entry)
         i = (ctypes.c_uint32 * 16)(*inst)
         lib_.hostprobe_set_host(st, e, i)
+        lib_.hostprobe_set_idle(st, ctypes.c_uint32(IDLE_TEST))
     spec.ref_setup = ref_setup
     return spec
 
@@ -77,13 +83,14 @@ CASES = [
     dict(time=0.5, mode=0, level=0.25),          # the defaults: the report
     dict(time=0.5, mode=0, level=1.0),
     dict(time=0.5, mode=1, level=0.25),          # Pass
+    dict(time=0.5, mode=2, level=1.0),           # Load
     dict(time=9.0, mode=7, level=9.0),           # out of range
     dict(time=-1, mode=-3, level=-1),
 ]
 
 
 def rnd_knobs(r):
-    return dict(time=r.uniform(0.1, 4), mode=r.randint(0, 1), level=r.uniform(0, 1))
+    return dict(time=r.uniform(0.1, 4), mode=r.randint(0, 2), level=r.uniform(0, 1))
 
 
 def sizes(place='b2'):
@@ -92,16 +99,16 @@ def sizes(place='b2'):
     return end - SPEC.places[place][0], SPEC.data_size()
 
 
-def long_check(spec, place, frames=3.1):
+def long_check(spec, place, frames=3.1, mode=0):
     """One instance through whole frames, every word against the reference, and the memory test's words at the end."""
     src, secs, syms, end, data = spec.assemble(place)
     ref = kr.Reference(spec)
     rig = kr.Rig(spec, secs, syms, seed=9)
-    kn = dict(time=0.5, mode=0, level=0.5)
+    kn = dict(time=0.5, mode=mode, level=0.5)
     i0 = rig.inst(0)
     rig.knobs(i0, kn)
     st = ref.new()
-    nblk = int(frames * FRAME_SAMPLES) // 16
+    nblk = int(frames * (LNSYM * LSYM if mode == 2 else FRAME_SAMPLES)) // 16
     x = kr.signal(nblk * 16, 41, amp=0.4)
     for b in range(nblk):
         blk = x[16 * b:16 * b + 16]
@@ -110,7 +117,7 @@ def long_check(spec, place, frames=3.1):
     got = (rig.sim.rd(SDR_A), rig.sim.rd(SDR_A + SDR_REQ - 1))
     want = (PAT_A, PAT_B) if spec.extra_writes else (0, 0)
     assert got == want, f'the memory test left {got[0]:#x}, {got[1]:#x}, not {want[0]:#x}, {want[1]:#x}'
-    print(f'  long run: {nblk * 16} samples ({nblk * 16 / FRAME_SAMPLES:.1f} frames) identical; the block\'s words '
+    print(f'  long run{" (Load)" if mode == 2 else ""}: {nblk * 16} samples ({frames:.1f} frames) identical; the block\'s words '
           f'{"hold the test pattern" if spec.extra_writes else "untouched"}')
 
 
@@ -134,6 +141,7 @@ if __name__ == '__main__':
             kr.check(empty, place, CASES[:1], rnd_knobs, secs)
             long_check(SPEC, place)
             long_check(empty, place, frames=1.05)
+            long_check(SPEC, place, frames=3.2, mode=2)
         except AssertionError as ex:
             sys.exit(f'hostprobe_kernel.py: CHECK FAILED: {ex}')
         print('CHECK OK')

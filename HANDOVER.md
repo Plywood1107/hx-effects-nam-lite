@@ -721,6 +721,33 @@ memwin reads the ARM's memory, not the DSP's, and no DSP-to-ARM path is known.
 - The decoder now divides each tone by its level in the recording: through a guitar speaker and a phone, 4 kHz
   arrived about 20 dB and 6 kHz about 40 dB under 2 kHz, and the first decode found no frames.
 
+## 2026-11-28: DSP load of every block (`tools/dsp_load.py`, the Probe's Mode Load)
+
+- **No load value reaches the ARM**: the SPI RX slots (0x10088054..0x10089054, frames 0xfacef00d / 0xd00fecaf /
+  0xdeadbeef) carry parameter messages and static pool entries only. So the Probe reads the DSP's idle word itself:
+  DM 0xc28c9 on the HX Effects (the Stomp's is 0xc2fd5), a float of idle percent; load = 100 - idle, about 1,509
+  cycles a point (100 % ≈ 150,900 cycles a 16-sample call). Report frames (PRB3) carry it as words 30 (lowest since
+  the last frame) and 32 (now).
+- **Mode Load (2)**: 6 words (sync 0x9E3779B9, "PRBL", frame count, idle now, lowest idle, sum of words 1-4), 10 ms
+  symbols (480 samples): 20 pilot symbols at 6 kHz, 2 kHz a 0, 4 kHz a 1, 10 of gap; 2.22 s a frame. Survives a room:
+  recorded by the Mac's microphone at the guitar amp (Level 0.5; 1.0 clipped). `tools/mac_record.swift` (AVAudioEngine;
+  ffmpeg's AVFoundation capture dropped 5-10 % of the buffers) writes the WAV; the decoder subtracts each tone's floor
+  and, if the pilot is lost, searches for the sync word. C test 29 checks; kernel 426 instructions, worst 1,030 cycles.
+- **Calibration**: Probe alone 16.1 %; one NAM A2 Lite +27.5 %, two +27.5 % each (nocaseguy: 27-29 % a NAM on the Stomp).
+- **The sweep** (`dsp_load.py sweep 3D --seconds 12`; `--start N`, `--only M1,M2` to resume or redo): each model alone
+  before the Probe in 3D (backed up and put back), the base re-measured every 25. 679 of 682 models; Killer Z, Bronze
+  Master and 3 OSC Synth gave no frames twice. Loopers, send/returns and IR blocks are skipped. Results:
+  build/dsp_load/sweep.jsonl and dsp_load.csv (not in git). **Input unplugged**: signal-dependent work isn't exercised.
+- **Findings**: stock blocks use about 0.70 x their Table 1 charge (+0.4 %, r = 0.91), so a preset charged 100 % runs at
+  about 86 %. Most over-charged: Feedbacker 5 % vs 29 %, the Poly pitch family 28-32 % vs 48-53 %, 80A Flanger 7 vs 23,
+  Tone Sovereign stereo 20 vs 38, Grammatico LG / Fullerton 21-23 vs 37-39 (retest the pitch and feedback ones with a
+  signal). Under-charged: stock Industrial Fuzz 42 % mono / 49 % stereo vs 13 / 23. NAM A2 Lite 27.5 vs 30.7 (fair).
+- **Overlays read 35-44 %, but that is the swap**: the Probe is an overlay too, so each overlay beside it swaps twice a
+  call (~28,000 cycles a swap, as noted in item 17). Alone they use ~3-4 % (the meter: Ottobit 4,100-6,100 cycles) vs
+  OVL_COST's 12-17 %; two overlays in one preset pay ~33 % for swapping. A cheaper swap is the biggest single target.
+  Measuring an overlay alone needs a resident probe.
+- Afterwards the Real Names full build (09cc4345) was flashed back: booted.
+
 ## Don'ts
 
 - Don't change the MD5 check to force another firmware through; every offset above is for 3.80.0.

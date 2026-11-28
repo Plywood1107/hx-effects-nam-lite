@@ -11,7 +11,9 @@ usage:
 
 The Probe (effects/hostprobe, Mode Report) sends a frame every 3.02 s: a 6 kHz pilot, 34 words as 2 kHz / 4 kHz
 tones of 2.5 ms a bit, then silence. Each frame carries the input meter's last 1-second window (peak, sum of
-squares, sum), the host's call-list entry and instance struct, and the SDRAM memory test (hostprobe.h). Record the
+squares, sum), the host's call-list entry and instance struct, the SDRAM memory test, and (PRB3) the DSP's idle word: its
+lowest value over the frame (word 30) and its value at the frame's start (word 32) (hostprobe.h; tools/dsp_load.py
+turns them into load). Record the
 pedal's output at 48 kHz (44.1 kHz works too), with the input gain set so the burst does not clip.
 
 --volts V: the AC RMS voltage of the test sine, measured at the pedal's input with the cable plugged in. Prints the
@@ -35,7 +37,9 @@ import numpy as np
 SYM48, NPILOT, NWORDS, NGAP = 120, 80, 34, 40
 NBITS = 32 * NWORDS
 NSYM = NPILOT + NBITS + NGAP
-SYNC, MAGIC, PAT = 0x9E3779B9, 0x50524232, (0xA5C3F00D, 0x5A3C0FF2)
+SYNC, MAGIC, PAT = 0x9E3779B9, 0x50524233, (0xA5C3F00D, 0x5A3C0FF2)
+MAGIC_V2 = 0x50524232                  # PRB2: words 30 and 32 are the SDRAM request and 0, not the idle word
+SDR_REQ = 0x10000
 F0, F1, FP = 2000.0, 4000.0, 6000.0
 
 
@@ -92,14 +96,18 @@ class Tones:
         return np.abs(self.c[f][b] - self.c[f][a]) ** 2
 
 
-def bits_at(tn, start, sps, nbits, gain=None):
+def bits_at(tn, start, sps, nbits, gain=None, floor=None):
     """The bits of nbits symbols from sample `start` (float), each judged on its middle 60%, and their margins.
-    gain: each tone's level in the recording (a speaker and a phone's mic roll the high tones off), to divide by."""
+    gain: each tone's level in the recording (a speaker and a phone's mic roll the high tones off), to divide by.
+    floor: each tone's steady background (a room, an amp's hiss: power a symbol-long window, which noise scales by
+    length), taken off first."""
     k = np.arange(nbits)
     a = np.round(start + (k + 0.2) * sps).astype(np.int64)
     b = np.round(start + (k + 0.8) * sps).astype(np.int64)
     g = gain or {F0: 1.0, F1: 1.0}
-    p0, p1 = tn.power(F0, a, b) / g[F0], tn.power(F1, a, b) / g[F1]
+    fl = floor or {F0: 0.0, F1: 0.0}
+    p0 = np.maximum(tn.power(F0, a, b) - 0.6 * fl[F0], 0.0) / g[F0]
+    p1 = np.maximum(tn.power(F1, a, b) - 0.6 * fl[F1], 0.0) / g[F1]
     return (p1 > p0).astype(np.uint8), np.abs(p1 - p0) / (p1 + p0 + 1e-30)
 
 
@@ -113,11 +121,13 @@ def words_of(bits):
     return w
 
 
-def decode(x, rate):
-    """Every frame found in mono signal x: a list of 34-word lists, in order."""
+def decode(x, rate, sym48=SYM48, npilot=NPILOT, nwords=NWORDS):
+    """Every frame found in mono signal x: a list of word lists, in order. The default geometry is the Report frame
+    (34 words, 2.5 ms symbols); dsp_load.py passes Mode Load's (6 words, 10 ms)."""
+    nbits = 32 * nwords
     x = np.asarray(x, dtype=np.float64)
     x = x - x.mean()
-    sps = SYM48 * rate / 48000.0
+    sps = sym48 * rate / 48000.0
     L = int(round(sps))
     tn = Tones(x, rate)
     hop = max(1, L // 8)
@@ -127,6 +137,10 @@ def decode(x, rate):
         return []
     # each tone's level where it sounds (its 98th percentile): the path to the recording may weaken one tone by
     # tens of dB against another (a guitar speaker and a phone: 4 kHz 20 dB and 6 kHz 40 dB under 2 kHz)
+    # and each tone's steady background (its 10th percentile: a room's noise, an amp's hiss), taken off first; a
+    # 2 kHz background a few dB under the tone otherwise hides the pilot and reads as 0 bits (a laptop's microphone)
+    floor = {f: float(np.percentile(p, 10)) for f, p in ((FP, pp), (F0, p0), (F1, p1))}
+    pp, p0, p1 = (np.maximum(p - floor[f], 0.0) for f, p in ((FP, pp), (F0, p0), (F1, p1)))
     gain = {f: max(float(np.percentile(p, 98)), 1e-30) for f, p in ((FP, pp), (F0, p0), (F1, p1))}
     pp, p0, p1 = pp / gain[FP], p0 / gain[F0], p1 / gain[F1]
     pilot = (pp > 4 * (p0 + p1)) & (pp > 0.05)
@@ -138,24 +152,24 @@ def decode(x, rate):
         j = i
         while j < len(pilot) and pilot[j]:
             j += 1
-        if (j - i) * hop < 0.5 * NPILOT * sps:                   # too short for a pilot
+        if (j - i) * hop < 0.5 * npilot * sps:                   # too short for a pilot
             i = j
             continue
         edge = starts[j - 1] + L                                 # about where the pilot stops
         best = None                                              # the sync word, up to 4 bits wrong (an echo, a
         for d in range(-L, L + 1, max(1, L // 40)):              # phone's codec); the checksum guards the frame
-            bits, m = bits_at(tn, edge + d, sps, 32, gain)
+            bits, m = bits_at(tn, edge + d, sps, 32, gain, floor)
             wrong = bin(words_of(bits)[0] ^ SYNC).count('1')
             if wrong <= 4:
                 score = (-wrong, float(m.mean()))
                 if best is None or score > best[0]:
                     best = (score, edge + d)
         if best is not None:
-            bits, _ = bits_at(tn, best[1], sps, NBITS, gain)
+            bits, _ = bits_at(tn, best[1], sps, nbits, gain, floor)
             w = words_of(bits)
-            if len(w) == NWORDS and w[0] == SYNC and w[33] == sum(w[1:33]) & 0xFFFFFFFF:
+            if len(w) == nwords and w[0] == SYNC and w[-1] == sum(w[1:-1]) & 0xFFFFFFFF:
                 frames.append(w)
-        i = j + int(NBITS * sps / hop)
+        i = j + int(nbits * sps / hop)
     return frames
 
 
@@ -187,7 +201,7 @@ def report(frames, volts=None, out=print):
         return []
     results = []
     for w in frames:
-        if w[1] != MAGIC:
+        if w[1] not in (MAGIC, MAGIC_V2):
             out(f'frame with version {w[1]:#010x}: not this tool\'s (expected {MAGIC:#010x})')
             continue
         m = meter(w)
@@ -205,14 +219,16 @@ def report(frames, volts=None, out=print):
     w = frames[-1]
     st = w[14:30]
     a, e = st[6], st[7]
+    if w[1] == MAGIC:
+        out(f'DSP idle word: {w[32]:#010x} at the frame\'s start, lowest {w[30]:#010x} (tools/dsp_load.py reads them)')
     out(f'host: call-list entry {" ".join(f"{v:#x}" for v in w[10:14])}')
     out(f'      instance struct {" ".join(f"{v:#x}" for v in st)}')
     size = (e - a) & 0xFFFFFFFF
     if w[8]:
-        out(f'SDRAM: words 6..7 = {a:#x}..{e:#x}, {size} words (asked for {w[30]}): the memory test wrote its two '
+        out(f'SDRAM: words 6..7 = {a:#x}..{e:#x}, {size} words (asked for {SDR_REQ}): the memory test wrote its two '
             f'words; {w[9]} mismatches since')
     else:
-        out(f'SDRAM: words 6..7 = {a:#x}..{e:#x} ({size} words): not the block asked for ({w[30]} words), left alone')
+        out(f'SDRAM: words 6..7 = {a:#x}..{e:#x} ({size} words): not the block asked for ({SDR_REQ} words), left alone')
     if results:
         out(f'dBu at 0 dBFS over {len(results)} frames: mean {np.mean(results):.2f}, spread {np.ptp(results):.2f} dB')
     return results
@@ -242,6 +258,7 @@ def selftest():
     entry = (ctypes.c_uint32 * 4)(0x1, 0x2, 0x3, 0x4)
     inst = (ctypes.c_uint32 * 16)(*([0] * 6 + [0x300000, 0x310000] + [0] * 8))
     ref.lib.hostprobe_set_host(st, entry, inst)
+    ref.lib.hostprobe_set_idle(st, ctypes.c_uint32(0x4248CCCD))
     frame = NSYM * SYM48
     levels = (-20.0, -12.0, -6.0)
     n = 16 * ((frame * 9) // 16)
@@ -282,6 +299,9 @@ def selftest():
         if frames and (frames[-1][8] != 1 or frames[-1][9] != 0 or frames[-1][20:22] != [0x300000, 0x310000]):
             ok = False
             print('  host words wrong')
+        if frames and (frames[-1][1] != MAGIC or frames[-1][30] != 0x4248CCCD or frames[-1][32] != 0x4248CCCD):
+            ok = False
+            print('  idle words wrong')
     v = 0.7746 * 10 ** ((12.0 - 6.0) / 20)                       # a sine at -6 dBFS that reads 12 dBu at 0 dBFS
     m = meter(next(w for w in reversed(decode(rec, 48000)) if meter(w)))
     cal = dbu(v) - m[2]
